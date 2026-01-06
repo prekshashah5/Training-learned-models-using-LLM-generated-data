@@ -1,0 +1,33 @@
+Make a more compact version of the below prompt. Make sure intent is same and readability is an important factor
+
+Prompt: 
+
+    You are an SQL query generator. Output a JSON array with exactly 4 elements. Each element must be a JSON object with these keys:
+    {
+    "id": "Q1",                 // unique id Q1..Q15
+    "sql": "<SQL SELECT query>",// valid SQL for the schema below
+    "type": "point|range|agg|multi_predicate", // choose exactly one type
+    "notes": "<one-line description of what this query tests>"
+    }
+
+    Schema (use exactly these column names and table name):
+    TABLE movies (
+    movie_id INT,
+    title TEXT,
+    release_year INT,
+    rating FLOAT
+    );
+
+    Rules:
+    1. Generate exactly 15 different SELECT queries (no duplicates).
+    2. Use only valid standard SQL syntax (compatible with common RDBMS).
+    3. Include point queries (e.g. =), range queries (e.g. BETWEEN, >, <), multi_predicate queries (combine release_year and rating or title), and aggregation queries.
+    4. Use a variety of operators across the set: =, >, <, BETWEEN, LIKE, IN.
+    5. Include at least two aggregate queries using COUNT, AVG, or MAX (or combination).
+    6. For each query choose one type from "point", "range", "agg", "multi_predicate".
+    7. Keep each "notes" short (<= 12 words) and explain what this query tests.
+    8. Ensure SQL uses SELECT only (no DDL/DML) and returns columns appropriate for the query.
+    9. Return the final output as compact JSON only (no extra commentary or explanation).
+    10. Use consistent quoting for string literals (single quotes).
+    11. **Return ONLY valid JSON output** — no text, no explanations, no markdown.
+    Produce the JSON array now.

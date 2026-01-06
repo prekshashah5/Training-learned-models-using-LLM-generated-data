@@ -1,0 +1,6 @@
+movies(
+  movie_id INT,
+  title TEXT,
+  release_year INT,
+  rating FLOAT
+)

@@ -1,0 +1,13 @@
+You are an SQL query generator.
+
+Schema:
+TABLE movies (movie_id INT, title TEXT, release_year INT, rating FLOAT);
+
+Task:
+Generate exactly 10 JSON objects (Q001..Q010), each representing a diverse SQL SELECT query
+for training a cardinality estimator. Use only ANSI SQL.
+
+Example format:
+[
+  {"id":"Q001","sql":"SELECT * FROM movies WHERE movie_id = 42;","type":"point","notes":"Primary-key point lookup"}
+]

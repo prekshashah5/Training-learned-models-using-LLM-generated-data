@@ -1,0 +1,61 @@
+{
+  "departments": {
+    "primary_key": "department_id",
+    "foreign_keys": {
+      "manager_id": "employees.employee_id"
+    },
+    "columns": {
+      "department_id": "int",
+      "department_name": "string",
+      "manager_id": "int"
+    }
+  },
+
+  "jobs": {
+    "primary_key": "job_id",
+    "columns": {
+      "job_id": "string",
+      "job_title": "string",
+      "min_salary": "float",
+      "max_salary": "float"
+    }
+  },
+
+  "employees": {
+    "primary_key": "employee_id",
+    "foreign_keys": {
+      "job_id": "jobs.job_id",
+      "manager_id": "employees.employee_id",
+      "department_id": "departments.department_id"
+    },
+    "columns": {
+      "employee_id": "int",
+      "first_name": "string",
+      "last_name": "string",
+      "email": "string",
+      "phone_number": "string",
+      "hire_date": "timestamp",
+      "job_id": "string",
+      "salary": "float",
+      "commission_pct": "float",
+      "manager_id": "int",
+      "department_id": "int"
+    }
+  },
+
+  "job_history": {
+    "primary_key": ["employee_id", "start_date"],
+    "foreign_keys": {
+      "employee_id": "employees.employee_id",
+      "job_id": "jobs.job_id",
+      "department_id": "departments.department_id"
+    },
+    "columns": {
+      "employee_id": "int",
+      "start_date": "timestamp",
+      "end_date": "timestamp",
+      "job_id": "string",
+      "department_id": "int"
+    }
+  }
+}
