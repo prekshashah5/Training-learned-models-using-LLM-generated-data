@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+
+# Output / Runtime artifacts
+app_logs/
+*.log
+
+# Data files (large)
+data/
+workloads/
+output/
+
+/.vscode
+__pycache__
+test_plots
+test-results
+.DS_Store
+.env
+venv
+TryingModels/schema/imdb_tsvs/
+/imdb-datasets
+/TryingModels/app_logs
+/temp
+/pipeline_results

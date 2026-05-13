@@ -1,0 +1,76 @@
+What is Machine Learning Here?
+- Using a neural Network to predict the number of rows a SQL query will return - without actually running the query on the database.
+
+Tranditionally done with manual formulas. 
+Now it will be replace with learned model.
+
+------------------------------------------------------------------------------
+
+Cardinality = number of rows returned by a SQL query.
+
+--------------------------------------------------------------------------------
+
+Important Terminologies:
+
+1. Cardinality: number of rows that matches a query
+2. Join Graph: A list of tables and the connection between them.
+3. Predicates: Conditions applied on columns.
+4. Training Data: A CSV file where each row = one SQL query represented as text and the true cardinality.
+Example:
+<Join graph> # <Predicates> # <True Cardinality>
+movie_companies mc,title t#t.id=mc.movie_id,mc.company_type_id,=,2#715
+This mean:
+- Query involvs movie_companies and title
+- Filter: company_type_id=2
+- Actual output rows = 715
+
+5. Neural Network Model:
+- A deep learning model that converts:
+    - tables
+    - joins
+    - filters
+
+6. Q - Error
+Main evalution metric:
+q-error = max(predicted/true, true/predicted)
+
+Lower q -error ---> better prediction 
+
+------------------------------------------------------------------------------------
+What does this project actually do?
+
+step1: Convert the sql queries to a machine readable format
+step2: feed them to a neural network
+step3: model predicts cardinality
+step4: train the model by comparing predicted vs true
+
+-----------------------------------------------------------------------------------
+
+Inputs and Outputs of the Project:
+
+Inputs:
+1. Training CSV of queries
+Each line has
+- tables
+- joins
+- filters
+- true cardinality
+
+2. Vocabulary files
+- Tables, columns, and operators used to create embeddings
+
+3. Hyperparameters
+- Batch size, learning rate, embedding size
+
+-------------------------------------------------------------------------------------
+
+Outputs:
+1. A trained neural model
+2. Prediction files
+3. Evalution metrics
+
+----------------------------------------------------------------------------------
+
+Command: 
+python train.py synthetic
+python train.py --queries 1000 --epochs 10 synthetic

@@ -1,0 +1,136 @@
+\documentclass[a4paper]{report}
+%\documentclass[a4paper,twoside,openright]{report}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[ngerman,english]{babel}
+\usepackage{titlesec}
+\usepackage{subfigure}
+\usepackage{graphicx}
+\usepackage{parskip}
+\usepackage{lmodern}
+\usepackage{adjustbox}
+\usepackage{tikz}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{caption}
+
+\usepackage{multirow}
+\usepackage{listings}
+\usepackage{xcolor}
+\lstdefinestyle{promptstyle}{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=none,
+    backgroundcolor=\color{white},
+    showstringspaces=false,
+    columns=fullflexible,
+    keepspaces=true,
+    xleftmargin=1em,
+    xrightmargin=1em
+}
+\usepackage{placeins}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{pgfplots}
+\usepackage{pdflscape}
+\usepackage[hidelinks]{hyperref}
+\usetikzlibrary{arrows,shapes,fit,positioning}
+\usetikzlibrary{decorations.pathmorphing}
+\usetikzlibrary{decorations.markings}
+
+\pgfplotsset{compat=1.18}
+
+\titleformat{\chapter}[display]
+{\normalfont\huge\bfseries}{\chaptertitlename\ \thechapter}{20pt}{\Huge}
+
+% configure autoref
+\addto\extrasenglish{
+	\def\chapterautorefname{Chapter}
+	\def\subsectionautorefname{Subsection}
+	\def\sectionautorefname{Section}
+}
+
+% this alters "before" spacing (the second length argument) to 0
+\titlespacing*{\chapter}{0pt}{-50pt}{20pt}
+
+\author{}
+\date{\today}
+\begin{document}
+\pagestyle{empty}
+\begin{titlepage}
+\begin{center}
+  % Upper part of the page  
+	\includegraphics[width=10cm,clip,trim=0 0 0 0\textwidth]{rptu}\\[2cm]
+	% {
+	% 	\linespread{1.5}\selectfont
+	% 	\textsc{\LARGE Rheinland-Pfälzische Technische Universität Kaiserslautern-Landau}\\[0.5cm]
+	% }
+  \textsc{\large Fachbereich Informatik}\\[1.5cm]
+	\vfill
+  \textsc{\Large Master's Thesis}\\[0.5cm]
+{
+  \linespread{1.0}\selectfont
+{\LARGE   \textsc{Creating and Benchmarking Learned Database Components using LLMs}\\[2cm]}
+}
+
+  { \Large
+  Author:\\
+	Preksha Rajesh Shah\\[2cm]
+  {\small submitted on: \\
+  \today}
+  }\\[1cm]
+
+  Supervisor\\
+  Angjela Davitkova\\[1cm]
+  Reviewers\\
+  Prof. Dr.-Ing. Sebastian Michel\\
+
+  
+\end{center}
+\end{titlepage}
+
+%
+\cleardoublepage
+
+
+\begin{abstract}
+Learned cardinality estimation has shown that neural networks can outperform traditional rule-based estimators, but training these models requires large volumes of labeled data obtained through expensive database query execution. This thesis presents a framework that combines large language model-based query generation with active learning to reduce this labeling cost. An LLM generates diverse SQL workloads from a given database schema, a four-layer validation pipeline filters invalid queries, and an active learning loop selects only the most informative queries for execution and labeling. The trained Multi-Set Convolutional Network achieves competitive estimation accuracy while requiring significantly fewer labeled queries than a fully supervised baseline. The entire pipeline is schema-agnostic and fully automated, enabling scalable training of learned database components on arbitrary relational schemas.
+\end{abstract}
+
+\cleardoublepage
+\selectlanguage{english}
+
+\tableofcontents
+\thispagestyle{empty}
+\listoffigures
+\thispagestyle{empty}
+\begingroup
+\thispagestyle{empty}
+\let\clearpage\relax
+\vspace{3cm}
+\listofalgorithms
+\let\clearpage\relax
+\vspace{3cm}
+\listoftables
+\endgroup
+\thispagestyle{empty}
+
+
+%%% 
+%%% Add your inputs here
+%%%
+
+\input{introduction}
+\input{background}
+\input{relatedwork}
+\input{approach}
+\input{querygeneration}
+\input{activelearning}
+\input{trainingapproach}
+\input{experiments}
+\input{conclusion}
+  
+\bibliographystyle{plain}
+\bibliography{main}
+
+\end{document}

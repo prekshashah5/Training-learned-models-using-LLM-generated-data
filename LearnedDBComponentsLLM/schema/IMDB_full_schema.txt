@@ -1,0 +1,80 @@
+CREATE TABLE title_basics (
+    tconst TEXT PRIMARY KEY,
+    titleType TEXT,
+    primaryTitle TEXT,
+    originalTitle TEXT,
+    isAdult BOOLEAN,
+    startYear SMALLINT,
+    endYear SMALLINT,
+    runtimeMinutes INTEGER,
+    genres TEXT
+);
+
+CREATE TABLE name_basics (
+    nconst VARCHAR(10) PRIMARY KEY,
+    primaryName TEXT,
+    birthYear SMALLINT,
+    deathYear SMALLINT,
+    primaryProfession TEXT,
+    knownForTitles TEXT
+);
+
+CREATE TABLE title_ratings (
+    tconst VARCHAR(10),
+    average_rating NUMERIC,
+    num_votes INTEGER,
+    CONSTRAINT fk_title_ratings_title
+        FOREIGN KEY (tconst)
+        REFERENCES title_basics(tconst)
+);
+
+CREATE TABLE title_crew (
+    tconst TEXT,
+    directors TEXT,
+    writers TEXT,
+    CONSTRAINT fk_title_crew_title
+        FOREIGN KEY (tconst)
+        REFERENCES title_basics(tconst)
+);
+
+CREATE TABLE title_episode (
+    tconst TEXT,
+    parentTconst TEXT,
+    seasonNumber TEXT,
+    episodeNumber TEXT,
+    CONSTRAINT fk_episode_title
+        FOREIGN KEY (tconst)
+        REFERENCES title_basics(tconst),
+    CONSTRAINT fk_episode_parent
+        FOREIGN KEY (parentTconst)
+        REFERENCES title_basics(tconst)
+);
+
+CREATE TABLE title_principals (
+    tconst TEXT,
+    ordering INTEGER,
+    nconst TEXT,
+    category TEXT,
+    job TEXT,
+    characters TEXT,
+    CONSTRAINT fk_principals_title
+        FOREIGN KEY (tconst)
+        REFERENCES title_basics(tconst),
+    CONSTRAINT fk_principals_name
+        FOREIGN KEY (nconst)
+        REFERENCES name_basics(nconst)
+);
+
+CREATE TABLE title_akas (
+    titleId TEXT,
+    ordering INTEGER,
+    title TEXT,
+    region TEXT,
+    language TEXT,
+    types TEXT,
+    attributes TEXT,
+    isOriginalTitle BOOLEAN,
+    CONSTRAINT fk_title_akas_title
+        FOREIGN KEY (titleId)
+        REFERENCES title_basics(tconst)
+);

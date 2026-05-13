@@ -1,0 +1,117 @@
+% !TEX root =  main.tex
+\chapter{Background}
+\label{chap:background}
+\pagestyle{plain}
+
+\section{Learned Database Systems and Cardinality Estimation}
+
+Modern database systems rely on query optimizers to generate efficient execution plans. At the core of query optimization lies cardinality estimation, which predicts the number of tuples produced during intermediate stages of query execution\cite{HE2024102854}. These estimates directly influence join ordering, operator selection, and resource allocation. Inaccurate estimates can therefore lead to inefficient execution plans and substantial performance degradation. Traditional cardinality estimation techniques typically rely on statistical summaries such as histograms and sampling, together with assumptions including attribute independence and uniform value distributions. Although these methods are computationally efficient, they often fail to reflect real-world data characteristics. Real-world datasets frequently contain strong correlations across attributes and relations, particularly in join-heavy workloads with multiple predicates. Consequently, conventional techniques often produce inaccurate estimates for complex analytical queries.
+
+Traditional cardinality estimation methods primarily rely on statistical summaries collected from database tables. One widely used technique involves histograms, where the value distribution of a column is approximated using a fixed number of buckets\cite{yi2025monomenhancingmonotonicitylearned}. Equi-width histograms divide the value domain into uniformly sized intervals, whereas equi-depth histograms attempt to maintain approximately equal numbers of tuples in each bucket. These summaries allow the optimizer to approximate predicate selectivity without scanning the underlying data. For example, under a uniformity assumption, the selectivity of an equality predicate can be estimated as:
+
+\begin{equation}
+|\sigma_{A=v}(R)| = \frac{|R|}{V(R,A)}
+\end{equation}
+
+where $|R|$ denotes the number of tuples in relation $R$, and $V(R,A)$ represents the number of distinct values in attribute $A$. Although computationally efficient, this approximation assumes that values are uniformly distributed and statistically independent, assumptions that rarely hold in practice.
+
+The limitations of independence assumptions become particularly severe in join-heavy workloads. Traditional optimizers frequently estimate join cardinalities using simplified formulas based on value distributions of join attributes. A common approximation for an equi-join between relations $R$ and $S$ on attribute $A$ is:
+
+\begin{equation}
+|R \bowtie S| = \frac{|R| \cdot |S|}{\max(V(R,A),V(S,A))}
+\end{equation}
+
+This formulation assumes that join values are evenly distributed and statistically independent across relations. In practice, however, relational data often contains skewed distributions, hierarchical dependencies, and complex correlations that violate these assumptions. As query complexity increases, estimation errors may propagate through the execution plan and degrade query performance.
+
+Another limitation of traditional approaches is their inability to adapt effectively to evolving workloads and changing data distributions. Modern database systems continuously ingest new records and experience shifting query patterns over time. Maintaining accurate statistical summaries under such conditions is computationally expensive, particularly for large-scale databases. As data distributions drift, previously collected statistics gradually become outdated, reducing estimation quality and leading to suboptimal query plans.
+
+These limitations have motivated the development of learned database systems, where machine learning models replace or augment traditional statistical estimators. Instead of relying on handcrafted assumptions regarding independence and uniformity, learned models infer relationships directly from query workloads and observed execution behavior. Learned cardinality estimation has therefore emerged as one of the most actively studied areas within learned database systems, aiming to capture complex predicate interactions and provide more robust estimates across diverse query workloads.
+
+\section{MSCN and Deep Learning-based Estimation}
+
+Kipf et al. proposed the Multi-Set Convolutional Network (MSCN), an important advancement in learning-based cardinality estimation~\cite{DBLP:conf/cidr/KipfKRLBK19}. MSCN reformulates cardinality estimation as a supervised learning problem in which query result sizes are predicted directly from query structure representations.
+
+Deep learning-based cardinality estimation approaches aim to overcome the limitations of traditional statistical techniques by learning complex relationships from query workloads and observed execution behavior\cite{10.1145/3725355}\cite{10.14778/3750601.3750699}. Unlike histogram-based methods that rely on assumptions, neural models can capture non-linear dependencies between predicates, correlations across attributes, and interactions between joined relations. This capability is particularly important for analytical workloads containing multiple joins and selective predicates that violate independence assumptions. By learning from large collections of executed queries, deep learning models can generalize beyond explicitly stored statistics and provide more robust cardinality predictions for unseen query patterns.
+
+MSCN represents SQL queries as collections of sets, including tables, joins, and predicates. This design is motivated by the observation that SQL query components are inherently unordered. Since SQL query semantics are independent of predicate ordering, the model must preserve permutation invariance across query components.
+
+The concept of permutation invariance is closely related to the Deep Sets framework. Given a set of elements $X = \{x_1, x_2, \dots, x_n\}$, a permutation-invariant function can be expressed as
+
+\begin{equation}
+f(X) = \rho \left( \sum_{x \in X} \phi(x) \right)
+\end{equation}
+
+where $\phi$ represents a learnable embedding function that transforms individual set elements into latent representations, and $\rho$ denotes a function that maps the aggregated representation to the final output. In MSCN, predicates, joins, and table features are first embedded independently and subsequently aggregated using pooling operations such as averaging. This architecture enables the model to process queries containing variable numbers of joins and predicates while preserving semantic equivalence across different query orderings.
+
+A central component of MSCN is the use of sampled bitmaps to represent table-level information. Instead of relying exclusively on symbolic query features, the model incorporates materialized samples from database tables to provide additional information regarding predicate selectivity and local data distributions. During preprocessing, a fixed number of tuples are sampled from each table. For a given query predicate, the model generates a bitmap indicating which sampled tuples satisfy the condition. These bitmaps provide compact approximations of predicate selectivity and local data distributions, enabling the model to capture correlations that are difficult to represent through traditional statistical summaries alone.
+
+Training neural cardinality estimators introduces additional challenges related to data distribution and optimization stability. Cardinality values frequently span several orders of magnitude, ranging from single tuples to millions of rows. Directly predicting raw cardinalities can therefore destabilize training and bias optimization toward large outputs. To address this issue, most learned estimators apply logarithmic normalization before training. A common normalization strategy is defined as
+
+\begin{equation}
+y_{\text{norm}} =
+\frac{
+\log(y) - \log(y_{\min})
+}{
+\log(y_{\max}) - \log(y_{\min})
+}
+\end{equation}
+
+where $y$ denotes the true cardinality and $y_{\min}$ and $y_{\max}$ correspond to the minimum and maximum observed cardinalities in the training data. Logarithmic normalization compresses the output range and reduces impact of extreme outliers, thereby improving optimization stability during gradient-based learning.
+
+These challenges motivate the need for diverse and representative training workloads in learned cardinality estimation systems. Neural cardinality estimators may overfit to the specific query distributions observed during training and struggle to generalize to unseen workloads. This problem becomes particularly severe under workload shifts, where future query patterns differ substantially from historical training data. Queries containing unseen join structures, rare predicates, or previously unobserved value ranges may produce inaccurate predictions even if the model performs well on validation datasets. 
+
+Despite these challenges, deep learning-based approaches have demonstrated substantial improvements over traditional histogram-based estimators for complex query workloads. By leveraging representation learning, permutation-invariant architectures, and sampled data representations, models such as MSCN can capture structural dependencies within SQL queries that are difficult to model using handcrafted statistical assumptions.
+
+\section{Workload Sensitivity and Challenges}
+
+The performance of learned cardinality estimators depends not only on the underlying model architecture but also on the characteristics of the training workload. Wang et al.~\cite{DBLP:journals/pvldb/WangQWWZ21} provide a comprehensive analysis of how different query properties influence learned cardinality estimators. Their study demonstrates that factors such as predicate selectivity, join complexity, and workload diversity significantly affect estimation accuracy and model robustness.
+
+An additional challenge in learned cardinality estimation concerns model generalization and overfitting. Neural cardinality estimators are typically trained on finite query workloads that cover only a subset of the possible query space. Although modern neural architectures are capable of learning complex relationships between predicates and joins, they may also memorize recurring workload patterns instead of learning representations that remain robust across varying query distributions. This issue becomes particularly problematic when training workloads contain repetitive query templates or narrow distributions of predicate values.
+
+Overfitting in learned estimators differs from traditional overfitting problems commonly observed in standard machine learning tasks. In cardinality estimation, the model must generalize not only across different input values but also across structurally distinct SQL queries. Queries may vary in the number of joins, predicate combinations, selectivity characteristics, and table interactions. Consequently, a model that performs well on validation data drawn from the same workload distribution may still fail when exposed to previously unseen query structures during deployment.
+
+A major source of generalization difficulty is the combinatorial nature of relational query spaces. Even relatively small schemas can produce enormous numbers of distinct query structures through different combinations of joins and predicates. Since it is infeasible to observe every possible query during training, learned estimators must infer broader structural patterns from limited examples. This requirement further emphasizes the importance of representation learning and workload diversity.
+
+Another challenge arises from the long-tailed distribution of query cardinalities. Real-world workloads frequently contain many moderately selective queries alongside a smaller number of highly selective or extremely broad scans. Neural models optimized primarily for average-case performance may therefore underperform on rare edge cases that appear infrequently during training.
+
+Regularization techniques play an important role in improving model generalization. Methods such as dropout, early stopping, and weight decay reduce the risk of memorizing narrow workload patterns. In particular, dropout introduces stochasticity during training by randomly disabling subsets of neurons, encouraging the model to learn more robust distributed representations. Nevertheless, workload diversity remains one of the most important factors influencing generalization performance.
+
+These challenges highlight an important distinction between learned cardinality estimation and traditional statistical approaches. While histogram-based methods rely on explicit assumptions regarding value distributions, neural estimators depend fundamentally on their ability to generalize from observed workloads to unseen query patterns. Consequently, understanding and improving generalization behavior remains a central research challenge in learned database systems.
+
+\section{LLM-based SQL Generation and Generative AI for Database Systems}
+
+Large language models (LLMs) have recently emerged as promising tools for structured query generation. The SQLStorm framework proposed by Schmidt et al.~\cite{DBLP:journals/pvldb/SchmidtLBN25} demonstrates that schema-aware prompting strategies can be used to generate large, diverse SQL query workloads. Unlike traditional template-based or rule-based query generation methods, LLMs are capable of producing structurally varied queries that better capture the diversity of real-world workloads.
+
+A key advantage of LLM-based query generation is the ability to incorporate semantic information about database schemas. By conditioning on table structures, column names, and schema relationships, LLMs can generate queries that are both syntactically valid and semantically meaningful. This capability is particularly useful for complex schemas where manually constructing diverse workloads becomes difficult and time-consuming. Compared to manually engineered query templates, LLMs can additionally produce broader combinations of predicates, joins, and filtering conditions, enabling more diverse exploration of the query space.
+
+LLM-generated workloads are especially relevant for learned database systems because they enable scalable creation of synthetic training queries beyond existing benchmark workloads. Such generated workloads may expose learned models to previously unseen query structures, predicate combinations, and join patterns, potentially improving workload diversity and model generalization.
+
+Recent work by Davitkova and Michel~\cite{DBLP:journals/corr/abs-2512-20271} further explores the use of generative AI for automating data generation in learned database systems. Their framework proposes a structured pipeline in which query generation, validation, execution, and model training are integrated into a unified workflow. Generated queries are validated against the target schema to ensure syntactic and semantic correctness before being incorporated into the training process. The work additionally highlights the importance of schema-aware prompting and iterative refinement strategies for improving workload quality and diversity.
+
+Despite these advances, generated queries must still be executed against the database in order to obtain ground-truth labels for supervised learning. Although query generation becomes automated, execution-based labeling remains computationally expensive and continues to limit scalability for learned cardinality estimation systems. This limitation motivates the exploration of approaches that reduce labeling cost while still maintaining workload diversity and estimator quality.
+
+\section{Active Learning and Uncertainty Estimation}
+
+Learned cardinality estimation systems require large quantities of labeled training data in order to generalize effectively across diverse query workloads~\cite{DBLP:conf/cidr/KipfKRLBK19,DBLP:journals/pvldb/WangQWWZ21}. However, obtaining ground-truth labels is computationally expensive because each query must be executed against the database to determine its true cardinality\cite{DBLP:phd/dnb/Woltmann23}. Active learning addresses this challenge by selectively choosing informative samples for labeling instead of exhaustively labeling entire query workloads~\cite{DBLP:journals/tnn/LiWCJDO25}.
+
+A widely used active learning strategy is uncertainty sampling, where the model prioritizes samples for which it is least confident~\cite{DBLP:journals/tnn/LiWCJDO25}. In neural networks, predictive uncertainty can be estimated using Monte Carlo (MC) dropout. Understanding MC dropout first requires examining the role of standard dropout as a regularization technique\cite{DBLP:conf/cvpr/ZeeviSLSO25}.
+
+Dropout was introduced as a regularization technique to reduce overfitting by randomly disabling units during training~\cite{srivastava2014dropout}. Baldi and Sadowski~\cite{DBLP:conf/nips/BaldiS13} analyzed its averaging and regularizing properties, showing that dropout discourages co-adaptation and can be interpreted as approximating an ensemble of subnetworks that share parameters.
+ 
+Gal and Ghahramani~\cite{DBLP:conf/icml/GalG16} later demonstrated that retaining dropout during inference allows neural networks to approximate Bayesian inference. Instead of producing a single deterministic prediction, the model performs multiple stochastic forward passes using different dropout masks. The resulting distribution of predictions provides an approximate estimate of epistemic uncertainty, where higher predictive variance indicates greater uncertainty caused by limited training knowledge.
+
+In learned cardinality estimation, MC dropout enables the identification of queries for which the estimator is uncertain. Queries associated with high predictive variance may contain patterns that are underrepresented in the training workload or difficult for the model to generalize. These uncertainty estimates therefore provide a principled mechanism for selecting informative queries during active learning.
+
+Beyond uncertainty-based acquisition, active learning can additionally incorporate diversity-aware sampling strategies~\cite{DBLP:journals/tnn/LiWCJDO25}. Diversity-based selection encourages broader coverage of the query space by reducing redundancy among selected queries and exposing the model to a wider range of join structures, predicate combinations, and selectivity patterns. Balancing uncertainty-driven acquisition with broad workload coverage is important for improving model generalization across unseen workloads.
+
+A practical limitation of MC dropout is the additional computational overhead introduced by repeated inference passes. Recent work by Srinivasan~\cite{Srinivasan2025Efficient} addresses this limitation through a model-splitting approach that separates deterministic and stochastic network components. When dropout is applied only after an initial deterministic portion of the network, the deterministic body can be executed once while the stochastic head is evaluated multiple times. This idea motivates more efficient use of MC dropout for uncertainty estimation in large candidate pools.
+
+The integration of active learning with synthetic workload generation is particularly attractive for learned database systems. Large language models can efficiently generate large pools of candidate SQL queries~\cite{DBLP:journals/pvldb/SchmidtLBN25}, while recent work has also explored generative models for synthesizing training data for learned database components~\cite{DBLP:journals/corr/abs-2512-20271}. Active learning can then reduce the execution cost required to label these generated queries. Together, these approaches provide a scalable framework for improving data efficiency in learned cardinality estimation pipelines.
+
+\section{Data Diversity and Distributional Similarity}
+
+Diversity within synthetic workloads plays an important role in improving model generalization for learned database systems. The PAARS framework~\cite{DBLP:journals/corr/abs-2503-24228} explores persona-driven prompting strategies to encourage greater variation in generated query distributions. By varying prompting contexts and generation behavior, such approaches aim to produce workloads that better capture heterogeneous query patterns.
+
+In order to test the quality of the generated data, the PAARS framework uses the KL divergence as a similarity metric between the generated data and real-world data. The KL divergence is a measure of the dissimilarity between two probability distributions, which can be used to test the similarity between the generated data and real-world data, especially in the case of SQL queries\cite{DBLP:journals/corr/abs-2512-20271}.
+
+In the context of SQL query generation, KL divergence may be applied to workload characteristics such as join counts, predicate types, and selectivity distributions. Comparing these feature distributions provides a quantitative mechanism for evaluating whether synthetic workloads reflect structural properties commonly observed in real query traces. Such distributional analysis is particularly useful when assessing the realism and diversity of generated workloads used for training learned cardinality estimators.

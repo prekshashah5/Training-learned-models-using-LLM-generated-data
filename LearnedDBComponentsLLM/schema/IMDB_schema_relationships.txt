@@ -1,0 +1,9 @@
+name_basics
+      |
+      | nconst
+      |
+title_principals
+      |
+      | tconst
+      |
+title_basics ---- title_ratings

@@ -1,0 +1,109 @@
+% !TEX root =  main.tex
+\chapter{Active Learning}
+\label{chap:active_learning}
+\pagestyle{plain}
+
+Labeling queries is the most expensive part of the pipeline. Every label requires executing a real SQL query on a database, and complex joins can take seconds or even minutes each. As the query pool grows to thousands of queries, the challenge shifts from labeling all available data to selecting a minimal subset that is sufficient for training an accurate model. Active learning provides a principled solution to this problem\cite{activelearningdriven}. This chapter presents the acquisition strategies, uncertainty estimation methods, and iterative training procedure used within the proposed active learning framework.
+
+
+\section{Initialization and Iterative Query Selection}
+
+In a naive setup, we would randomly sample queries from the pool, label them, and train the model on the resulting labeled dataset. Random sampling has the advantage of implementation simplicity. But it treats every query as equally valuable, which is almost never true. A pool of five thousand queries will contain many structurally similar queries, such as single-table scans with common predicates, labeling structurally redundant queries contributes limited additional information. Meanwhile, the pool also contains unusual queries that fall in poorly explored corners of the feature space: rare join patterns, extreme selectivities, and underrepresented query structures that remain underrepresented in the training workload. Labeling even a handful of these can influence the model's predictions.
+
+Active learning modifies the selection process. Instead of choosing queries at random, it relies on the model to identify queries associated with high predictive uncertainty. The model, having been trained on the labels collected so far, scores every remaining unlabeled query using a measure of informativeness. The queries with the highest scores those for which the model exhibits the highest predictive variance or expects the greatest learning benefit are selected for labeling. This targeted approach means the model's training set grows not randomly but strategically, concentrating the labeling budget where it matters most.
+
+Formally, let $\mathcal{U} = \{q_1, q_2, \ldots, q_N\}$ be the full unlabeled query pool, let $\mathcal{L} \subset \mathcal{U}$ be the set of queries labeled so far, and let $f_\theta$ denote the MSCN model trained on $\mathcal{L}$. An acquisition function $\alpha: \mathcal{U} \setminus \mathcal{L} \rightarrow \mathbb{R}$ assigns a score to each unlabeled query. At every round, the $k$ queries with the highest scores are selected, labeled by executing them on the database, and added to $\mathcal{L}$. The model is retrained and the cycle continues. The goal is to reach the best possible estimation accuracy while keeping $|\mathcal{L}|$ as small as possible.
+
+
+\section{Acquisition Strategies}
+
+The acquisition strategy determines which unlabeled queries are selected for expensive database execution during each active learning round. In the proposed framework, each round follows the same iterative workflow: the MSCN model is trained on the currently labeled dataset, the remaining unlabeled query pool is scored, a subset of queries is selected according to the acquisition strategy, and only the selected queries are executed to obtain ground-truth cardinalities. Since database execution dominates the overall computational cost of the pipeline, the acquisition strategy directly controls the trade-off between labeling cost and estimation quality.
+
+\textbf{Random Sampling} serves as the baseline acquisition strategy. Queries are selected uniformly at random from the unlabeled pool without considering model predictions or uncertainty estimates. This strategy introduces essentially no acquisition overhead and therefore provides an important reference point for evaluating uncertainty-aware acquisition methods.
+
+Although random selection is unguided, it can still perform reasonably well when the generated query pool already exhibits substantial structural diversity. In such cases, the model is exposed to a broad range of query patterns even without targeted acquisition. However, random sampling cannot explicitly prioritize difficult or underrepresented regions of the query space, which may reduce labeling efficiency compared to uncertainty-based approaches.
+
+\textbf{Monte Carlo (MC) Dropout} is the primary uncertainty-based acquisition strategy used in this work. During acquisition, dropout layers remain active at inference time, and each unlabeled query is evaluated multiple times using stochastic forward passes through the MSCN model. In the current implementation, each query is evaluated using $T = 25$ stochastic forward passes. This value was selected as a practical compromise between uncertainty estimation stability and computational overhead. Smaller values produced noisier variance estimates, while substantially larger values increased acquisition time without meaningful improvements in acquisition behavior.
+
+The variance across these repeated predictions is interpreted as a measure of epistemic uncertainty. Queries whose predictions vary strongly across dropout masks are considered informative because they indicate regions where the model has not yet learned a stable internal representation. Such queries are therefore prioritized for execution and inclusion in the labeled training set.
+
+Given $T$ stochastic forward passes producing predictions
+$\{\hat{y}_1, \hat{y}_2, \dots, \hat{y}_T\}$,
+the predictive mean is computed as:
+
+\begin{equation}
+\mu(x)=\frac{1}{T}\sum_{t=1}^{T}\hat{y}_t
+\end{equation}
+
+and the predictive uncertainty is approximated using the sample variance
+
+\begin{equation}
+\sigma^2(x)=\frac{1}{T}\sum_{t=1}^{T}(\hat{y}_t-\mu(x))^2
+\end{equation}
+
+Queries with larger predictive variance are interpreted as more uncertain and are therefore prioritized during acquisition.
+
+An alternative approach for uncertainty quantification in neural networks is the use of deep ensembles, in which multiple independently trained models are maintained and predictive disagreement across the ensemble is interpreted as uncertainty~\cite{lakshminarayanan2017simplescalablepredictiveuncertainty}. Although ensemble methods often produce higher-quality uncertainty estimates, they introduce substantially greater computational overhead. Training and maintaining $M$ separate MSCN models increases memory usage, training time, and inference cost approximately linearly with the ensemble size.
+
+This overhead is particularly significant in the present setting because the estimator is retrained from scratch during every active learning round. Maintaining an ensemble would therefore compound the computational cost across rounds, making the approach impractical for the iterative acquisition pipeline considered in this work. MC Dropout provides a substantially more efficient approximation by sampling from an implicit ensemble of subnetworks using stochastic forward passes through a single trained model. As a result, uncertainty-driven acquisition can be performed without the overhead associated with repeatedly training multiple independent estimators.
+
+Compared to random sampling, MC Dropout introduces additional acquisition overhead because each query must be evaluated multiple times using stochastic forward passes. However, this cost remains substantially lower than both the expense of executing SQL queries to obtain labels and the overhead associated with maintaining deep ensemble models. The strategy therefore provides a practical balance between uncertainty-aware acquisition quality and computational efficiency within the iterative active learning pipeline.
+
+\subsection{Efficient Pool Scoring}
+
+A key implementation aspect of the framework is that acquisition scoring is intentionally designed to remain inexpensive relative to database labeling. During scoring, unlabeled queries are encoded structurally and processed in batches through the MSCN model. During acquisition, unlabeled queries are scored using structural encodings and placeholder bitmap inputs (dummy bitmaps), avoiding database execution at scoring time. Database execution and runtime bitmap generation are then performed for the selected subset of acquired queries.
+
+This separation ensures that computational resources are concentrated on potentially informative samples rather than on the entire generated workload\cite{activelearningdriven}. Consequently, the acquisition stage fulfills the primary objective of active learning in this context: reducing the number of expensive database executions while still improving the estimator progressively across rounds.
+
+\subsection{Practical Observations}
+
+In practice, acquisition behavior is not strictly monotonic across active learning rounds. Validation Q-error may fluctuate as newly acquired queries modify the effective training distribution. Experimental observations showed that MC Dropout occasionally improved higher-percentile Q-error metrics compared to random acquisition, particularly for more difficult queries associated with larger estimation errors.
+
+More generally, the acquisition strategy should be interpreted as a mechanism for allocating a limited labeling budget rather than as a guaranteed monotonic optimizer. Its practical objective is to focus execution effort on queries that are likely to provide useful training information while keeping overall labeling cost computationally manageable.
+
+\section{The Training Loop}
+
+The full active learning procedure, shown in Algorithm~\ref{alg:active_learning_full}, starts by splitting the query pool into three partitions. Ten percent is held out as a fixed validation set. From the remaining ninety percent, twenty percent is sampled at random to form the initial training set, and the rest becomes the unlabeled pool.
+
+\begin{algorithm}[htbp]
+\caption{Active Learning for Cardinality Estimation}
+\label{alg:active_learning_full}
+\begin{algorithmic}[1]
+\Require Query set $Q$, labeling budget, acquisition strategy $\mathcal{A}$
+\Ensure Trained model $M$
+
+\State Split $Q$ into validation set $Q_{val}$ (10\%) and pool $Q_{pool}$
+\State Initialize labeled set $Q_L \subset Q_{pool}$ with 20\% sampled uniformly at random
+\State Obtain labels (true cardinalities) for all queries in $Q_L$
+\State Initialize model $M$
+
+\For{each round $t = 1, \dots, T$}
+    \State Train $M$ on $Q_L$
+    \State Evaluate $M$ on $Q_{val}$
+    \State Score each $q \in Q_{pool} \setminus Q_L$ using acquisition function $\mathcal{A}(q, M)$
+    \State Select top-$k$ queries $Q_S$ based on scores
+    \State Obtain labels for $Q_S$
+    \State Update labeled set: $Q_L \gets Q_L \cup Q_S$
+\EndFor
+
+\State \Return $M$ and evaluation metrics
+\end{algorithmic}
+\end{algorithm}
+
+The initial seed of twenty percent is not arbitrary. The model needs enough labeled data in the first round to learn a baseline that is good enough for its uncertainty scores to be meaningful. If the seed is too small ---for example, five percent--- the model's first predictions are essentially random, and the acquisition function ends up selecting queries based on noise rather than genuine uncertainty. Twenty percent strikes a balance: large enough for a reasonable first model, small enough to leave a substantial unlabeled pool for active selection to work with.
+
+The total labeling cost across the full run is:
+\[
+\lfloor 0.1 \times N \rfloor + \lfloor 0.2 \times 0.9N \rfloor + R \times k
+\]
+where $N$ denotes the total query pool size, $R$ is the number of active learning rounds, and $k$ is the acquisition batch size per round. In practice, realized cost can be lower if the unlabeled pool is exhausted before all rounds complete. The coefficients arise directly from the pipeline design. First, \(10\%\) of the generated workload is reserved as a fixed validation set. The remaining \(90\%\) forms the candidate pool used for training and active learning. From this remaining workload, an initial bootstrap subset corresponding to \(20\%\) is labeled in order to train the first model before active learning begins. After initialization, each active learning round acquires and labels an additional batch of \(k\) queries selected by the acquisition strategy. Consequently, the total labeling effort consists of three components: the validation labels, the initial bootstrap labels, and the labels acquired incrementally during the active learning rounds. With typical settings of \(R = 5\) and \(k = 200\), the pipeline labels only a fraction of the complete workload while leaving a substantial portion of the generated query pool unlabeled and therefore never executed on the database.
+
+\section{Active Learning in Cardinality Estimation}
+
+Active learning does not work equally well for every machine learning problem. Its effectiveness depends on several conditions, all of which hold in our setting.
+
+The first condition is that labels must be expensive enough to make intelligent selection worthwhile. In image classification, for instance, labeling is often cheap a human glances at a photo and clicks a category. The overhead of running an acquisition function may not be justified. In cardinality estimation, every label requires a live database execution. A three-table join over tens of millions of rows can take several seconds or minutes. Across thousands of queries, the labeling stage dominates the pipeline's wall-clock time. Cutting the label count by a third or more translates directly into hours saved. The second condition is that the unlabeled workload is sufficiently diverse so informative and redundant queries can be distinguished.
+
+The third condition is that the model’s uncertainty signal must be trustworthy. If predictive variance fails to reflect estimation error, assigning low uncertainty to inaccurate predictions, the acquisition function may systematically avoid the queries that would provide the greatest benefit for learning. In the proposed framework, uncertainty estimation is obtained through Monte Carlo dropout rather than directly from the output magnitude itself. During inference, dropout layers remain active and multiple stochastic forward passes are performed for the same query. The resulting prediction variance serves as an uncertainty estimate and, in practice, tends to correlate with regions where prediction error is high. Consequently, higher predictive variance tends to occur in region of the query space where its internal representation is unstable or insufficiently trained, which aligns well with the objectives of active learning.
+
+When all three conditions hold, active learning becomes an iterative and adaptive process. The acquisition function selects informative queries, labeling these queries improves the model, and the improved model subsequently produces more reliable uncertainty estimates. These refined uncertainty estimates then support more effective query selection in later rounds. As the iterations progress, the model gradually concentrates training on informative regions of the query space, allowing the training set to evolve toward a compact subset of highly informative examples.

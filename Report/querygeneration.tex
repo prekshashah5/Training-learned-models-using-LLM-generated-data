@@ -1,0 +1,200 @@
+% !TEX root =  main.tex
+\chapter{Query Generation Approach}
+\label{chap:query_generation}
+\pagestyle{plain}
+
+A learned cardinality estimator is only as effective as the query workload used during training. If the model is trained on a narrow and repetitive set of queries, it is more likely to memorize recurring patterns than to learn representations that generalize effectively to unseen workloads. In contrast, training on structurally diverse queries that cover a broad range of join topologies, predicate selectivities, and table combinations provides a stronger foundation for accurate estimation across different query distributions. This chapter describes the workload generation process used in this work, beginning with query generation through a large language model and followed by a deterministic fallback mechanism. It also explains the validation procedures that ensure every query entering the training pipeline is syntactically correct, compatible with the database schema, and properly formatted for downstream processing.
+
+Importantly, the generated workload serves a dual purpose. It provides both the training pool from which active learning selects queries for labeling and the held-out validation set used to evaluate the trained estimator. Unlike prior approaches that generate queries solely for training while relying on separate benchmark workloads for evaluation, the proposed pipeline uses LLM-generated queries throughout both training and evaluation. As a result, the evaluation remains self-contained and independent of externally curated test workloads.
+
+
+\section{Why Use a Language Model}
+
+The traditional alternatives for obtaining training queries each have clear drawbacks. Query logs drawn from production systems carry privacy risks and tend to reflect the habits of a particular user base rather than the full space of possible queries. Template-based generators can produce any structure their templates define, but those templates must be written by hand and rarely capture the subtle correlations and predicate distributions found in real workloads. Uniform random sampling over the schema produces syntactically valid queries but distributes predicates and join patterns in ways that bear little resemblance to actual usage.
+
+Large language models address many of these limitations effectively. Models such as Llama 3.2 are trained on extensive corpora of source code, technical documentation, and natural language text that contain substantial amounts of SQL and database-related content. Consequently, they are capable of generating syntactically correct and semantically meaningful SQL queries when provided with schema information and generation constraints. Prior work shows broad SQL-generation capability, but in this implementation generation is intentionally constrained to a subset compatible with downstream encoding: SELECT COUNT(*), bounded table count, valid join paths, and conjunctive comparison predicates \cite{DBLP:journals/corr/abs-2512-20271}.
+
+The generated workloads are not limited to fixed templates or manually enumerated query patterns. Instead, the diversity arises from the model’s learned representation of SQL syntax and query semantics, enabling the generation of structurally varied workloads that remain compatible with the underlying schema. Previous studies further demonstrate that large language models can adapt query generation to different workload requirements and database contexts while preserving both syntactic and semantic correctness \cite{DBLP:journals/corr/abs-2512-20271}. This capability is particularly important for learned cardinality estimation, where training effectiveness depends strongly on exposure to a broad and representative range of query patterns.
+
+\section{Prompt Design}
+
+The quality of the generated workload depends strongly on the prompt design. Ours is structured as a five-part template, illustrated in Figure~\ref{fig:prompt_structure}. The first part assigns a role: \begin{lstlisting}[
+    style=promptstyle,
+    caption={LLM prompt template (excerpt)},
+    label={lst:prompt}
+]
+            You are a SQL query workload generator for a database.
+\end{lstlisting} This framing primes the model to produce queries rather than explanations or tutorials. The second part injects the full database schema as DDL statements table names, columns, data types, foreign keys so the model knows what it is allowed to reference. The third part supplies column statistics: minimum and maximum values for numeric columns, which help the model pick predicate values that fall within realistic ranges rather than generating unrealistic values. The fourth part defines the structural constraints imposed on generated queries, while the fifth part specifies the required output format for downstream parsing and processing.
+
+\begin{figure}[tb]
+\centering
+\begin{tikzpicture}[
+    block/.style={draw, rectangle, rounded corners=3pt, minimum width=12cm, minimum height=1.3cm, text centered, font=\small},
+    arrow/.style={->, thick, >=stealth},
+    node distance=1.5cm
+]
+    \node [block, fill=blue!15] (role) {\textbf{1. Role Assignment}: ``You are a SQL query workload generator for a database.''};
+    \node [block, fill=green!15, below=of role] (schema) {\textbf{2. Schema Context}: Complete DDL with table names, columns, types, and relationships};
+    \node [block, fill=yellow!15, below=of schema] (stats) {\textbf{3. Column Statistics}: Min/max values and cardinalities for numeric columns};
+    \node [block, fill=orange!15, below=of stats] (rules) {\textbf{4. Generation Rules}: Strict constraints on query structure and complexity};
+    \node [block, fill=red!15, below=of rules] (output) {\textbf{5. Output Format}: JSON array specification with example queries};
+
+    \draw [arrow] (role) -- (schema);
+    \draw [arrow] (schema) -- (stats);
+    \draw [arrow] (stats) -- (rules);
+    \draw [arrow] (rules) -- (output);
+
+    \node [left=0.3cm of role, font=\scriptsize, text=gray, rotate=90, anchor=south] {Context};
+    \node [left=0.3cm of rules, font=\scriptsize, text=gray, rotate=90, anchor=south] {Constraints};
+
+\end{tikzpicture}
+\caption{Five-part prompt template. The upper components provide schema and statistical context, while the lower components define structural generation constraints.}
+\label{fig:prompt_structure}
+\end{figure}
+
+The fourth component introduces constraints motivated by the requirements of the downstream Multi-Set Convolutional Network (MSCN) encoder, introduced in Section 2.2 and discussed in detail in Section 7.3. More broadly, however, similar restrictions are common across supervised learned cardinality estimators, since such models rely on fixed and well-defined feature representations of SQL queries. The subset of SQL supported by the system is therefore determined not by arbitrary implementation preferences, but by the expressive limitations of the encoding scheme and the neural architecture operating on top of it. Queries that cannot be represented consistently in feature space cannot be processed reliably during either training or inference.
+
+For this reason, every generated query is required to follow a constrained SQL fragment compatible with the MSCN representation. Each query must use \texttt{SELECT COUNT(*)}, involve between one and three tables with proper aliases, join tables only through valid foreign key relationships defined in the schema, and restrict filter predicates to simple comparison operators such as \texttt{=}, \texttt{<}, and \texttt{>}, connected exclusively through conjunctions using \texttt{AND}. More complex SQL constructs including \texttt{OR}, \texttt{IN}, \texttt{LIKE}, nested subqueries, aggregations, and other advanced operators are intentionally excluded from the workload. These constructs cannot be encoded correctly by the MSCN feature representation and would therefore produce incomplete or misleading input features. Enforcing these constraints during query generation ensures that every query entering the training pipeline remains schema-compatible, representable by the encoder, and valid for downstream model training and evaluation.
+
+The fifth component of the prompt specifies the output format as a JSON array, where each element contains a single key, "sql", whose value is a complete SQL query generated by the language model. This structured representation ensures reliable and deterministic parsing of the model output. In cases where the model produces additional explanatory text alongside the JSON, a lightweight post-processing step based on regular expressions is applied to extract the valid JSON content.
+
+
+\section{Workload Diversity}
+
+When used iteratively for data generation, large language models can gradually lose diversity, producing outputs that concentrate on a narrower set of patterns over time. This behavior aligns with the phenomenon of model collapse~\cite{collapse}, where repeated sampling or self-conditioned generation reduces distributional coverage and overemphasizes high-probability outputs. In the context of SQL workload generation, this appears as recurring join structures and similar predicate configurations across batches.
+
+To address this issue, we introduce a rotating set of diversity hints that guide the model toward different regions of the query space. Five emphasis hints cycle in sequence to rebalance generation toward underrepresented query patterns while preserving a weighted structural mix ( simple and medium-complexity queries) and practical labeling cost. The hints emphasize single-table queries, medium-complexity joins involving two to three tables, mixed point and range predicates, and selectivity extremes ranging from highly selective filters to broad scans.
+
+These categories are motivated by prior work on learned cardinality estimation, which shows that model performance depends strongly on the structural and statistical properties of the training workload. In particular, the number of joined tables influences query complexity, predicate types affect selectivity estimation, and the distribution of cardinalities, especially the inclusion of extreme values-plays an important role in model calibration and generalization~\cite{DBLP:conf/cidr/KipfKRLBK19}. By explicitly targeting these aspects, the proposed hint rotation encourages coverage of both common query patterns and less frequent edge cases. Advancing the hint index with each batch further helps maintain a balanced distribution across categories, improving the overall diversity and representativeness of the generated workload.
+
+Generating all queries within a single prompt would exceed the model's context window and reduce workload diversity. Instead, the system works in batches. The total query target is divided by the batch size, and each batch gets a fresh prompt with the current diversity hint. Algorithm~\ref{alg:batch_generation} outlines the procedure.
+
+\begin{algorithm}[tb]
+\caption{LLM-Based Query Generation}
+\label{alg:batch_generation}
+\begin{algorithmic}[1]
+\Require target\_count
+\Ensure query\_set
+
+\State query\_set $\gets \emptyset$
+\State num\_batches $\gets$ compute\_batches(target\_count)
+
+\For{each batch in num\_batches}
+    \State hint $\gets$ select\_diversity\_hint($|$query\_set$|$)
+    \State prompt $\gets$ construct\_prompt(schema, statistics, hint)
+
+    \For{$attempt \gets 1$ to $n$}
+        \State response $\gets$ LLM(prompt)
+        \State queries $\gets$ extract\_valid\_SQL(response)
+        
+        \If{queries $\neq \emptyset$}
+            \State query\_set $\gets$ query\_set $\cup$ queries
+            \State \textbf{break}
+        \EndIf
+    \EndFor
+\EndFor
+
+\State \Return trim(query\_set, target\_count)
+\end{algorithmic}
+\end{algorithm}
+
+The algorithm generates a set of SQL queries using a large language model (LLM) until a target count is reached. It first determines the number of batches required and initializes an empty query set. For each batch, a diversity hint is selected based on the number of queries generated so far, encouraging variation in query structure and complexity. A prompt is then constructed using the database schema, column statistics, and the selected hint. To improve robustness, the algorithm allows up to three attempts per batch. In each attempt, the prompt is sent to the LLM, and the response is parsed to extract valid SQL queries. If at least one valid query is obtained, the queries are added to the collection and the algorithm proceeds to the next batch. This retry mechanism helps handle cases where the model produces invalid or unparseable output. After processing all batches, the collected queries are trimmed to match the exact target count. This ensures that the final output is both size-constrained and diverse, making it suitable for downstream training tasks.
+
+Due to the stochastic nature of large language model inference, individual generation requests may fail in several ways, including network or API errors, malformed or non-JSON responses, or outputs that do not conform to the expected SQL structure. In this context, a call refers to a single request to the language model for generating a batch of queries. To improve robustness, each batch generation request is retried up to three times if no valid queries can be extracted from the response. The retry limit of $n=3$ was selected as a practical compromise between robustness and runtime overhead. Empirically, most batches already succeed on the first attempt, while one or two additional retries recover nearly all remaining failures. Increasing the retry limit further was observed to provide only marginal improvements while unnecessarily increasing generation latency. In practice, this retry strategy achieves a near-perfect batch-level success rate, meaning that almost every batch eventually produces at least one valid, schema-compliant SQL query.
+
+
+\section{Query Validation Pipeline}
+
+Even with careful prompting, some fraction of the LLM's output will be unusable. A query might reference a column that does not exist, use an \texttt{OR} that slipped past the instructions, or simply be unparseable. Rather than trusting the LLM to be perfect, we pass every query through four progressively stricter validation layers, illustrated in Figure~\ref{fig:validation_pipeline}.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    node distance=1.8cm,
+    block/.style={draw, rectangle, rounded corners=3pt, minimum width=5.5cm, minimum height=1.1cm, align=center, font=\small},
+    reject/.style={draw, rectangle, rounded corners=3pt, minimum width=2.5cm, minimum height=0.8cm, align=center, font=\small, fill=red!15},
+    arrow/.style={->, thick, >=stealth},
+    rarrow/.style={->, thick, >=stealth, red!70},
+]
+    \node [block, fill=gray!15] (raw) {Raw LLM Output (N queries)};
+    \node [block, fill=blue!15, below=of raw] (struct) {Layer 1: Structural Validation\\{\scriptsize Regex-based keyword filtering}};
+    \node [block, fill=green!15, below=of struct] (parse) {Layer 2: SQL Parsing\\{\scriptsize FROM/WHERE clause extraction}};
+    \node [block, fill=yellow!15, below=of parse] (schema) {Layer 3: Schema Validation\\{\scriptsize Table/column existence checks}};
+    \node [block, fill=orange!15, below=of schema] (format) {Layer 4: Format Conversion\\{\scriptsize MSCN-compatible structure}};
+    \node [block, fill=green!30, below=of format] (valid) {Valid Queries ($\leq$ N)};
+
+    \draw [arrow] (raw) -- (struct);
+    \draw [arrow] (struct) -- (parse);
+    \draw [arrow] (parse) -- (schema);
+    \draw [arrow] (schema) -- (format);
+    \draw [arrow] (format) -- (valid);
+
+    \node [reject, right=2.5cm of struct] (r1) {Reject: Forbidden\\keywords found};
+    \node [reject, right=2.5cm of parse] (r2) {Reject: Parse\\failure};
+    \node [reject, right=2.5cm of schema] (r3) {Reject: Unknown\\table/column};
+    \node [reject, right=2.5cm of format] (r4) {Reject: Conversion\\failure};
+
+    \draw [rarrow] (struct.east) -- (r1.west);
+    \draw [rarrow] (parse.east) -- (r2.west);
+    \draw [rarrow] (schema.east) -- (r3.west);
+    \draw [rarrow] (format.east) -- (r4.west);
+
+\end{tikzpicture}
+\caption{Four-layer validation pipeline. Cheap structural checks run first, expensive schema lookups run last. Queries rejected at any stage are logged for post-hoc analysis.}
+\label{fig:validation_pipeline}
+\end{figure}
+
+The first layer consists of a set of lightweight regex-based checks that reject any query containing forbidden keywords such as \texttt{OR}, \texttt{IN}, \texttt{LIKE}, or \texttt{BETWEEN}, as well as any query with more than one \texttt{SELECT} (a sign of subqueries). The second layer attempts to parse what survives, extracting the FROM clause, WHERE clause, and any JOIN\ldots ON clauses and decomposing them into tables, join conditions, and filter predicates.
+
+The third layer cross-references the parsed result against the actual schema. This stage verifies schema consistency by ensuring that all referenced table names exist, all aliases correctly resolve to valid tables, all predicate columns belong to their respective tables, and all join conditions conform to defined foreign key relationships. Queries that fail these checks are discarded from the validated set, remaining queries are schema-consistent under the implemented checks, though runtime execution can still fail due to timeout or database factors. The fourth layer converts the remaining queries into the structured format that MSCN expects: three comma-separated lists of tables, joins, and predicates, plus a placeholder for the cardinality that will be filled in during labeling.
+
+
+\section{Synthetic Fallback}
+
+\begin{table}[tb]
+\centering
+\caption{LLM-based versus synthetic query generation.}
+\label{tab:gen_comparison}
+\begin{tabular}{|l|c|c|}
+\hline
+\textbf{Property} & \textbf{LLM-Based} & \textbf{Synthetic} \\
+\hline
+Schema adaptability & Automatic & Requires manual updates \\
+Predicate diversity & High (learned patterns) & Medium (uniform random) \\
+Join topology variety & High & Limited to hand-coded hub-based patterns \\
+Value distribution & Realistic (stat-aware) & Uniform within range \\
+Validation pass rate & $\sim$95\% & 100\% (by construction) \\
+Reproducibility & Non-deterministic & Fully deterministic \\
+\hline
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:gen_comparison} highlights the complementary strengths of the two workload generation strategies. The LLM-based approach prioritizes structural diversity, schema adaptability, and workload realism, making it suitable for large-scale training scenarios intended to approximate heterogeneous analytical query distributions. In contrast, the synthetic fallback emphasizes deterministic behavior, low execution overhead, and reproducibility, which are particularly valuable for debugging, controlled benchmarking, and active learning evaluation under stable workload conditions. The comparison further illustrates the trade-off between workload richness and experimental control that motivates the inclusion of both generation modes within the proposed framework.
+
+Not every environment has access to an LLM, and not every experiment needs one. For quick iteration, unit testing, and baseline comparisons, the framework includes a deterministic synthetic generator, following the methodology established in prior cardinality estimation benchmarks \cite{DBLP:conf/cidr/KipfKRLBK19} \cite{leis2015how}. Unlike the LLM-based generation pipeline, the synthetic fallback does not dynamically derive query structures from the database schema. The current synthetic fallback is IMDB-specific and manually defined. It does not automatically derive full query structure from arbitrary schemas, so portability requires explicit adaptation of table definitions, join rules, and value ranges.
+
+The fallback generator is intentionally constrained in terms of query complexity and structural variation. Query generation is restricted to either single-table queries or two-table joins, selected using weighted random sampling with a bias toward join queries. In practice, multi-table queries primarily follow hub-based join structures centered around the \texttt{title\_basics} relation, most commonly combined with \texttt{title\_ratings} or \texttt{title\_principals}. Predicate values are sampled uniformly within predefined ranges associated with individual columns, ensuring that generated predicates remain syntactically valid and compatible with the target schema.
+
+\subsection{Role in Controlled Experimental Evaluation}
+
+An important motivation for including the synthetic fallback generator is the need for controlled and reproducible experimentation. While LLM-based workload generation produces structurally diverse query distributions, the stochastic nature of neural text generation introduces variability across runs. Even when prompts and sampling parameters remain unchanged, generated workloads may still differ in terms of join structures, predicate composition, and selectivity characteristics. This variability can complicate controlled comparisons between different acquisition strategies because observed performance differences may partially originate from workload variation rather than from the acquisition mechanism itself.
+
+The deterministic fallback generator addresses this issue by providing a stable and repeatable workload construction process. Under fixed random seeds and unchanged generator logic, the same sequence of queries is generated consistently across executions. This enables controlled evaluation settings in which experimental differences can be attributed more directly to the learning strategy, model configuration, or acquisition function rather than to changes in the generated workload itself.
+
+Such reproducibility is particularly important for active learning experiments. Since active learning performance depends strongly on the composition of the unlabeled query pool, even moderate changes in workload structure may influence uncertainty estimates and acquisition behavior. Using a deterministic workload therefore simplifies interpretation of experimental outcomes and improves comparability across repeated runs.
+
+The synthetic generator also provides practical advantages during development and debugging. Because query structures remain predictable and execution behavior is comparatively stable, individual pipeline components can be evaluated in isolation without the additional variability introduced by stochastic LLM outputs. This simplifies verification of feature extraction, bitmap construction, labeling behavior, and acquisition scoring during system development.
+
+\subsection{Workload Bias and Structural Simplification}
+
+Although the deterministic fallback generator improves reproducibility and experimental control, it also introduces several forms of structural bias. The generated workloads are intentionally simplified and therefore do not fully capture the diversity of relational query patterns observed in realistic analytical environments.
+
+One important limitation concerns join topology diversity. The synthetic generator primarily produces hub-oriented joins centered around the \texttt{title\_basics} relation. As a result, the generated workloads contain relatively limited variation in join graph structure. More complex relational interactions involving larger join chains, alternative join paths, or heterogeneous graph connectivity patterns are largely absent from the generated query space.
+
+Predicate generation is similarly simplified. Predicate values are sampled uniformly from predefined attribute ranges rather than being generated from learned workload distributions. Consequently, the resulting selectivity behavior may differ substantially from realistic query workloads, where predicate distributions are often highly skewed and influenced by semantic correlations between attributes. Real analytical queries frequently exhibit concentrated filtering behavior around specific value ranges, whereas uniformly sampled predicates tend to produce smoother and less varied selectivity distributions.
+
+These simplifications also influence the learning problem itself. Since the generated workload contains fewer structurally difficult queries and reduced variability in predicate composition, the estimator is exposed to a narrower feature distribution during training. This may reduce the difficulty of the estimation task compared to more diverse LLM-generated workloads. In particular, uncertainty estimates obtained during active learning may become artificially stable because the workload contains fewer rare or heterogeneous query patterns.
+
+The synthetic fallback provides a controlled approximation for strategy comparison and debugging; conclusions from synthetic-only evaluations should be interpreted separately from LLM-generated workload behavior. While this simplification is useful for controlled experiments and debugging, it limits the ability of the generated workloads to represent the full complexity of real-world relational query distributions.
+
+The constrained query space also simplifies downstream labeling and execution. Since query complexity is intentionally limited, generated queries exhibit predictable execution behavior and comparatively stable runtime characteristics during cardinality labeling. This is beneficial for testing pipeline components in isolation, benchmarking active learning behavior under controlled conditions, and verifying model training procedures without introducing variability originating from stochastic LLM outputs.

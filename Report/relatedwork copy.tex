@@ -1,0 +1,67 @@
+\chapter{Related Work}
+\label{chap:relatedwork}
+\pagestyle{plain}
+
+\section{Learned Cardinality Estimation}
+
+The use of machine learning to replace traditional database components has gained significant attention, particularly in the context of cardinality estimation. A foundational contribution in this area is the Multi-Set Convolutional Network (MSCN) proposed by Kipf et al.~\cite{DBLP:conf/cidr/KipfKRLBK19}, which reformulates cardinality estimation as a supervised learning problem. Unlike conventional estimators that rely on simplifying assumptions such as attribute independence, MSCN represents queries as sets of tables, joins, and predicates, allowing the model to capture complex correlations across query components.
+
+A key strength of MSCN lies in its ability to model join-crossing correlations, which are difficult for traditional estimators to handle effectively. Furthermore, the use of bitmap-based sampling enables the model to incorporate information about intermediate query results, improving estimation accuracy for complex queries involving multiple joins and predicates.
+
+While MSCN demonstrates strong performance compared to traditional estimators, it relies on execution-based labeling to obtain ground truth cardinalities. This requirement introduces computational overhead and can limit scalability when constructing large training datasets. As a result, subsequent research has explored alternative approaches to reduce the dependency on query execution while maintaining estimation accuracy.
+
+\section{Workload Characteristics and Model Generalization}
+
+Beyond model architecture, the effectiveness of learned cardinality estimators is strongly influenced by the characteristics of the training workload. Wang et al.~\cite{DBLP:journals/pvldb/WangQWWZ21} provide a comprehensive analysis demonstrating that learned models are highly sensitive to factors such as predicate types, selectivity, join complexity, and query structure.
+
+A key observation is that models trained on narrow or biased workloads often fail to generalize to unseen queries. For example, a model trained primarily on equality predicates may perform poorly when evaluated on range predicates or more complex join conditions. Similarly, variations in selectivity can significantly impact estimation accuracy, as models struggle to extrapolate beyond observed distributions.
+
+The issue of workload shift further complicates deployment. In real-world systems, query distributions evolve over time, leading to discrepancies between training and inference workloads. Under such conditions, learned models can exhibit significant performance degradation. These findings emphasize the importance of constructing training datasets that are both diverse and representative of real-world query patterns.
+
+Recent work on robust cardinality estimation under changing workloads~\cite{DBLP:journals/pvldb/NegiWKTMMKA23} further highlights the importance of adaptability, reinforcing the need for data generation approaches that can capture a wide range of query characteristics.
+
+\section{LLM-based SQL Workload Generation}
+
+The emergence of large language models (LLMs) has introduced new possibilities for SQL workload generation. The SQLStorm framework~\cite{DBLP:journals/pvldb/SchmidtLBN25} demonstrates that LLMs can generate large-scale, diverse, and realistic SQL queries using schema-aware prompting techniques.
+
+Unlike traditional template-based approaches, which are inherently limited in diversity, LLM-based methods can generate queries with varying levels of complexity, including different join structures, predicate combinations, and nested queries. This flexibility enables the generation of workloads that better reflect real-world usage patterns.
+
+Additional work in text-to-SQL and SQL understanding, such as CHASE-SQL~\cite{DBLP:conf/iclr/PourrezaL0CTKGS25} and evaluation studies by Rahaman et al.~\cite{DBLP:conf/edbt/RahmanZMCP25}, further demonstrate the capability of LLMs to understand and generate structured queries. Similarly, TAPEX~\cite{DBLP:conf/iclr/LiuCGZLCL22} explores pre-training techniques for table reasoning, highlighting the broader applicability of neural models in structured data tasks.
+
+However, existing LLM-based generation approaches primarily focus on query generation rather than labeled data creation. Generated queries still require execution to obtain ground truth cardinalities, thereby retaining the dependency on database systems and limiting scalability for training purposes.
+
+\section{Generative AI for Training Database Components}
+
+Recent work on integrating generative AI into database systems has sought to address the limitations of manual and execution-based data generation. Davitkova and Michel~\cite{DBLP:journals/corr/abs-2512-20271} propose a framework that leverages generative models to automatically train learned database components.
+
+This framework introduces a structured pipeline that integrates query generation, validation, execution, and model training. By automating query generation, it significantly reduces reliance on manually collected query logs and enables the creation of diverse training datasets. Techniques such as prompt engineering and iterative refinement are used to improve the quality and realism of generated queries.
+
+Despite these advancements, the framework still depends on executing queries to obtain ground truth labels. While generation is automated, labeling remains computationally expensive, limiting scalability. This highlights a critical gap: existing approaches have automated query generation but have not eliminated the dependency on execution-based labeling.
+
+\section{Active Learning for Efficient Data Utilization}
+
+Active learning provides a complementary approach to improving data efficiency in supervised learning systems. Recent advances in deep active learning~\cite{DBLP:journals/tnn/LiWCJDO25} show that selecting informative samples can significantly reduce the amount of labeled data required for training.
+
+In the context of learned cardinality estimation, active learning can be used to minimize the number of queries that need to be executed for labeling. By prioritizing queries where the model is uncertain or performs poorly, it is possible to achieve high accuracy with fewer labeled samples.
+
+In addition to uncertainty-based strategies, diversity-based sampling plays an important role in ensuring that selected queries cover a wide range of patterns. This is particularly relevant when working with synthetically generated data, where redundancy may otherwise reduce training effectiveness. Combining uncertainty and diversity criteria allows for the construction of efficient and representative training datasets.
+
+Although active learning has been extensively studied in machine learning, its application to learned database systems remains relatively limited. Integrating active learning with LLM-based data generation presents a promising direction for improving both scalability and efficiency.
+
+\section{Data Diversity and Distribution Alignment}
+
+Ensuring that synthetic data reflects real-world distributions is a critical challenge. The PAARS framework~\cite{DBLP:journals/corr/abs-2503-24228} introduces persona-based generation to simulate diverse user behaviors, enabling the creation of varied and realistic data.
+
+A key contribution of this work is the use of KL divergence to measure the similarity between generated and real data distributions. This provides a quantitative method for evaluating whether synthetic data accurately captures real-world characteristics. In the context of SQL workloads, such metrics can be applied to distributions over query features, including join counts, predicate types, and selectivity.
+
+Distribution alignment is essential for training robust models. If synthetic data does not reflect real-world usage patterns, learned models may fail to generalize effectively. Incorporating distributional metrics into the generation process helps ensure that synthetic datasets are both diverse and representative.
+
+\section{Positioning of the Proposed Approach}
+
+The existing literature demonstrates significant progress in learned database systems and LLM-based data generation. Models such as MSCN~\cite{DBLP:conf/cidr/KipfKRLBK19} highlight the potential of learned approaches for cardinality estimation, while studies on workload characteristics~\cite{DBLP:journals/pvldb/WangQWWZ21} emphasize the importance of diverse training data. LLM-based frameworks such as SQLStorm~\cite{DBLP:journals/pvldb/SchmidtLBN25} and generative pipelines~\cite{DBLP:journals/corr/abs-2512-20271} demonstrate the feasibility of large-scale query generation.
+
+However, a common limitation across these approaches is the continued reliance on execution-based labeling. While query generation has been largely automated, obtaining ground truth labels still requires executing queries on a database, introducing significant computational overhead.
+
+The approach proposed in this thesis addresses this limitation by leveraging LLMs to generate both queries and their corresponding labels, thereby eliminating the need for database execution during training. Furthermore, by incorporating active learning~\cite{DBLP:journals/tnn/LiWCJDO25} and diversity-aware generation strategies~\cite{DBLP:journals/corr/abs-2503-24228}, the proposed method aims to improve both data efficiency and representativeness.
+
+In this framework, the LLM serves as a data generator, while the trained supervised model acts as the final database component during inference. This separation enables scalable and efficient training pipelines, representing a step toward fully automated learned database systems.

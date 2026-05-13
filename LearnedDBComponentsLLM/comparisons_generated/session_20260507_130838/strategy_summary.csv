@@ -1,0 +1,3 @@
+strategy,display_name,final_labeled_size,final_median_qerror,final_p90_qerror,final_p95_qerror,best_median_qerror,round_of_best_median,final_validation_mae
+random,Random Sampling,5549,4.043749897929382,52.929336512730686,52.929336512730686,1.628875976456392,17,13295128.363347458
+mc_dropout,MC Dropout,5682,1.8143681206628113,5.620796689084325,19.173507048756647,1.788934740786381,19,10491321.69279661

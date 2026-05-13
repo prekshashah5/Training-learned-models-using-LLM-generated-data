@@ -1,0 +1,75 @@
+\chapter{Background}
+\label{chap:background}
+\pagestyle{plain}
+
+This chapter provides the necessary background for understanding the proposed approach. It introduces key concepts in learned database systems, cardinality estimation, and recent advances in generative AI for database components. The discussion also covers data efficiency techniques and considerations for synthetic data generation. These concepts form the foundation for the methodology presented later in this thesis.
+
+\section{Learned Database Systems and Cardinality Estimation}
+
+Modern database systems rely on query optimizers to determine efficient execution strategies for SQL queries. A central component of this process is cardinality estimation, which predicts the number of tuples produced during intermediate stages of query execution. These estimates directly influence decisions such as join ordering, operator selection, and resource allocation, making them critical for overall system performance.
+
+Traditional cardinality estimation techniques rely on statistical summaries such as histograms, sampling, and simplifying assumptions including attribute independence and uniform data distribution. While these approaches are computationally efficient, they often fail to capture real-world data characteristics. In practice, data exhibits complex correlations across attributes and tables, particularly in join-heavy queries, leading to inaccurate estimates.
+
+Another limitation of these approaches is their limited adaptability to evolving data distributions and query workloads. In real-world systems, both data and workloads change over time, making it difficult to maintain accurate statistics. This challenge has led to the development of learned database systems, where machine learning models are used to replace or enhance traditional components.
+
+\section{MSCN and Deep Learning-based Estimation}
+
+A significant advancement in learned cardinality estimation is the Multi-Set Convolutional Network (MSCN), proposed by Kipf et al.~\cite{DBLP:conf/cidr/KipfKRLBK19}. MSCN formulates cardinality estimation as a supervised learning problem, where query result sizes are predicted based on structured representations of queries.
+
+MSCN represents queries as sets of tables, joins, and predicates, rather than as sequences. Each set is processed independently using shared neural network layers, ensuring that the model remains invariant to the ordering of query components. This representation aligns well with the semantics of SQL queries.
+
+The model also incorporates bitmap-based sampling, where sampled tuples from base tables are used to generate bitmaps indicating predicate satisfaction. These bitmaps provide additional information about intermediate results and enable the model to capture correlations more effectively.
+
+Despite its effectiveness, MSCN relies on execution-based labeling, where each query must be executed to obtain its true cardinality. This introduces a significant computational cost and limits scalability when generating large training datasets.
+
+\section{Workload Sensitivity and Challenges}
+
+The performance of learned cardinality estimators depends not only on the model architecture but also on the characteristics of the training workload. Prior studies~\cite{DBLP:journals/pvldb/WangQWWZ21} show that query features such as predicate types, join complexity, and selectivity significantly influence model performance.
+
+Models trained on limited or biased workloads may struggle to generalize to unseen queries. Variations in query structure and selectivity can lead to large estimation errors. Furthermore, changes in query distributions over time, often referred to as workload shifts, can degrade model performance.
+
+These observations highlight the importance of constructing diverse and representative training datasets that capture a wide range of query patterns.
+
+\section{LLM-based SQL Generation}
+
+Large language models have recently emerged as powerful tools for generating structured data, including SQL queries. Frameworks such as SQLStorm~\cite{DBLP:journals/pvldb/SchmidtLBN25} demonstrate that LLMs can generate diverse and realistic SQL workloads using schema-aware prompting techniques.
+
+Compared to traditional template-based approaches, LLMs can produce queries with a broader range of structures and complexities. They are also capable of incorporating semantic information about database schemas, enabling the generation of meaningful and valid queries.
+
+However, while LLMs are effective at generating queries, they do not inherently provide corresponding labels such as query result sizes. As a result, generated queries must still be executed on a database to obtain ground truth labels, which introduces additional computational cost.
+
+\section{Generative AI for Database Components}
+
+The base paper~\cite{DBLP:journals/corr/abs-2512-20271} presents a framework that integrates generative AI into the training of learned database components. The framework uses LLMs to automatically generate SQL queries tailored to a given schema, reducing reliance on manually collected query logs.
+
+The system follows a structured pipeline that includes query generation, validation, execution, and model training. Generated queries are first validated to ensure correctness and then executed to obtain labels. These labeled queries are used to train supervised models that implement database components.
+
+This approach enables scalable data generation and supports experimentation across different schemas. However, the reliance on execution-based labeling remains a limitation, as it introduces computational overhead and restricts scalability.
+
+\section{Active Learning for Data Efficiency}
+
+Active learning is a technique used to improve data efficiency in machine learning by selecting the most informative samples for training~\cite{DBLP:journals/tnn/LiWCJDO25}. Instead of using all available data, active learning focuses on samples that are expected to provide the greatest improvement in model performance.
+
+Common strategies include uncertainty-based sampling, where the model selects inputs it is least confident about, and diversity-based sampling, which ensures coverage of different regions of the input space. These techniques help reduce the amount of labeled data required while maintaining model accuracy.
+
+Active learning is particularly useful in scenarios where labeling is expensive, making it relevant for systems that rely on large-scale data generation.
+
+\section{Data Diversity, Personas, and KL Divergence}
+
+Data diversity plays a crucial role in training robust machine learning models. The PAARS framework~\cite{DBLP:journals/corr/abs-2503-24228} introduces the concept of persona-based generation to simulate diverse behaviors and generate varied data distributions.
+
+To evaluate the similarity between generated and real data, PAARS uses KL divergence, a statistical measure that quantifies the difference between probability distributions. In the context of SQL workloads, KL divergence can be used to compare distributions over query features such as joins, predicates, and selectivity.
+
+Ensuring that synthetic data closely matches real-world distributions is important for improving model generalization.
+
+\section{System Perspective: Practical Deployment}
+
+From a system perspective, deploying LLM-based data generation pipelines requires careful consideration of efficiency and reproducibility. Running models locally or in controlled environments allows for better control over generation processes and supports iterative experimentation.
+
+Such setups enable consistent query generation, validation, and refinement, ensuring that generated data meets the requirements of downstream training tasks.
+
+\section{Summary and Motivation}
+
+This chapter has outlined the key concepts underlying learned database systems, including cardinality estimation, deep learning-based models, and generative data pipelines. While learned models such as MSCN demonstrate strong performance, they are limited by the high cost of obtaining labeled data. Generative AI approaches provide scalable query generation, but still rely on execution for labeling.
+
+These limitations motivate the need for approaches that combine generative capabilities with data-efficient learning strategies. The following chapters build upon these foundations to develop a framework that addresses these challenges.

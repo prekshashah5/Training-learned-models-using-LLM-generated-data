@@ -1,0 +1,24 @@
+total_queries: 5000
+batch_size_gen: 20
+model_name: llama3.2
+ollama_url: http://206.1.53.104:11434
+schema_file: ../TryingModels/schema/IMDB_schema.txt
+stats_file: 
+synthetic: True
+db_host: localhost
+db_port: 5432
+db_name: imdb
+db_user: postgres
+db_password: 1111
+db_timeout: 60000
+num_materialized_samples: 1000
+strategy: random
+rounds: 10
+acquire: 200
+epochs: 100
+batch_size_train: 1024
+hid_units: 256
+cuda: False
+out: pipeline_results
+seed: None
+env: False

@@ -1,0 +1,83 @@
+\begin{thebibliography}{10}
+
+\bibitem{DBLP:journals/corr/abs-2512-20271}
+A.~Davitkova and S.~Michel.
+\newblock Automated training of learned database components with generative
+  {AI}.
+\newblock {\em CoRR}, abs/2512.20271, 2025.
+
+\bibitem{gal2016dropout}
+Y.~Gal and Z.~Ghahramani.
+\newblock Dropout as a bayesian approximation: Representing model uncertainty
+  in deep learning.
+\newblock In {\em Proceedings of the 33rd International Conference on Machine
+  Learning, {ICML} 2016, New York City, NY, USA, June 19-24, 2016}, volume~48
+  of {\em {JMLR} Workshop and Conference Proceedings}, pages 1050--1059.
+  JMLR.org, 2016.
+
+\bibitem{kipf2018learned}
+A.~Kipf, T.~Kipf, B.~Radke, V.~Leis, P.~Boncz, and A.~Kemper.
+\newblock Learned cardinalities: Estimating correlated joins with deep
+  learning.
+\newblock {\em CoRR}, abs/1809.00677, 2018.
+
+\bibitem{DBLP:conf/cidr/KipfKRLBK19}
+A.~Kipf, T.~Kipf, B.~Radke, V.~Leis, P.~Boncz, and A.~Kemper.
+\newblock Learned cardinalities: Estimating correlated joins with deep
+  learning.
+\newblock In {\em 9th Biennial Conference on Innovative Data Systems Research,
+  {CIDR} 2019, Asilomar, CA, USA, January 13-16, 2019, Online Proceedings}.
+  www.cidrdb.org, 2019.
+
+\bibitem{DBLP:journals/tnn/LiWCJDO25}
+D.~Li, Z.~Wang, Y.~Chen, R.~Jiang, W.~Ding, and M.~Okumura.
+\newblock A survey on deep active learning: Recent advances and new frontiers.
+\newblock {\em {IEEE} Trans. Neural Networks Learn. Syst.}, 36(4):5879--5899,
+  2025.
+
+\bibitem{DBLP:conf/iclr/LiuCGZLCL22}
+Q.~Liu, B.~Chen, J.~Guo, M.~Ziyadi, Z.~Lin, W.~Chen, and J.~Lou.
+\newblock {TAPEX:} table pre-training via learning a neural {SQL} executor.
+\newblock In {\em The Tenth International Conference on Learning
+  Representations, {ICLR} 2022, Virtual Event, April 25-29, 2022}.
+  OpenReview.net, 2022.
+
+\bibitem{DBLP:journals/corr/abs-2503-24228}
+S.~Mansour, L.~Perelli, L.~Mainetti, G.~Davidson, and S.~D'Amato.
+\newblock {PAARS:} persona aligned agentic retail shoppers.
+\newblock {\em CoRR}, abs/2503.24228, 2025.
+
+\bibitem{DBLP:journals/pvldb/NegiWKTMMKA23}
+P.~Negi, Z.~Wu, A.~Kipf, N.~Tatbul, R.~Marcus, S.~Madden, T.~Kraska, and
+  M.~Alizadeh.
+\newblock Robust query driven cardinality estimation under changing workloads.
+\newblock {\em Proc. {VLDB} Endow.}, 16(6):1520--1533, 2023.
+
+\bibitem{DBLP:conf/iclr/PourrezaL0CTKGS25}
+M.~Pourreza, H.~Li, R.~Sun, Y.~Chung, S.~Talaei, G.~T. Kakkar, Y.~Gan,
+  A.~Saberi, F.~Ozcan, and S.~{\"{O}}. Arik.
+\newblock {CHASE-SQL:} multi-path reasoning and preference optimized candidate
+  selection in text-to-sql.
+\newblock In {\em The Thirteenth International Conference on Learning
+  Representations, {ICLR} 2025, Singapore, April 24-28, 2025}. OpenReview.net,
+  2025.
+
+\bibitem{DBLP:conf/edbt/RahmanZMCP25}
+A.~Rahaman, A.~Zheng, M.~Milani, F.~Chiang, and R.~Pottinger.
+\newblock Evaluating {SQL} understanding in large language models.
+\newblock In A.~Simitsis, B.~Kemme, A.~Queralt, O.~Romero, and P.~Jovanovic,
+  editors, {\em Proceedings 28th International Conference on Extending Database
+  Technology, {EDBT} 2025, Barcelona, Spain, March 25-28, 2025}, pages
+  909--921. OpenProceedings.org, 2025.
+
+\bibitem{DBLP:journals/pvldb/SchmidtLBN25}
+T.~Schmidt, V.~Leis, P.~Boncz, and T.~Neumann.
+\newblock Sqlstorm: Taking database benchmarking into the {LLM} era.
+\newblock {\em Proc. {VLDB} Endow.}, 18(11):4144--4157, 2025.
+
+\bibitem{DBLP:journals/pvldb/WangQWWZ21}
+X.~Wang, C.~Qu, W.~Wu, J.~Wang, and Q.~Zhou.
+\newblock Are we ready for learned cardinality estimation?
+\newblock {\em Proc. {VLDB} Endow.}, 14(9):1640--1654, 2021.
+
+\end{thebibliography}

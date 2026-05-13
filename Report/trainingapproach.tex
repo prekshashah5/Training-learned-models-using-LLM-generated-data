@@ -1,0 +1,190 @@
+% !TEX root =  main.tex
+\chapter{Training Approach}
+\label{chap:training_approach}
+\pagestyle{plain}
+
+Transforming validated SQL queries into a neural cardinality estimator involves several non-trivial steps: labeling each query with its true row count, encoding the query into a fixed-size tensor the network can process, and training the network using an appropriate loss function. This chapter covers each of these steps. The active learning framework that decides which queries are worth labeling is presented separately in Chapter~\ref{chap:active_learning}.
+
+\section{Database Labeling}
+
+After query generation and validation, the pipeline proceeds to the ground-truth acquisition stage. At this point, the objective is no longer to generate new SQL structures, but to execute validated query representations and attach reliable cardinality labels for downstream model training. In the current implementation, each query is represented internally using the MSCN-oriented decomposition introduced earlier in this thesis, consisting of tables, joins, and predicates. These structured components are reconstructed into executable SQL statements, evaluated on PostgreSQL, and then augmented with the resulting cardinality value. The labeled query object can subsequently be used during feature extraction, active learning acquisition, and neural network training.
+
+The reconstruction process is deterministic and follows the same structural representation used throughout the pipeline. A \texttt{FROM} clause is constructed from the participating tables and aliases, join relationships are translated into equality conditions using schema-defined foreign key paths, and predicates are appended with type-aware formatting rules. Numeric predicate values are emitted directly, whereas textual values are quoted before execution. The resulting SQL generation process remains intentionally constrained and consistent with the restricted SQL fragment supported by the MSCN encoder. This deterministic reconstruction layer also improves reproducibility, since identical structured query representations always produce identical executable SQL statements across different active learning rounds.
+
+Execution is performed under strict timeout control in order to maintain stability during large-scale labeling runs. Before each query execution, PostgreSQL's \texttt{statement\_timeout} parameter is configured using a predefined limit, which defaults to 6000 milliseconds in the current implementation. The timeout configuration is reset immediately after execution completes. If the reconstructed query already uses a \texttt{SELECT COUNT(*)} form, it is executed directly. Otherwise, the query is wrapped inside an outer counting query of the form \texttt{SELECT COUNT(*) FROM (<query>) AS subq}. This unified counting interface allows the same labeling subsystem to process both explicitly aggregated queries and more general query forms while always producing a scalar cardinality target.
+
+A central requirement of learned cardinality estimation is that training labels accurately reflect the true execution behavior of the underlying database system. Rather than relying on approximations or synthetic estimates, the supervision signals used in this work are obtained directly through PostgreSQL query execution. This ensures that the resulting labels correspond to the actual relational semantics, optimizer behavior, and data distributions present in the database instance. Reliable labeling is particularly important in active learning settings because acquisition decisions in later rounds depend heavily on the quality of labels collected during earlier iterations. Inaccurate or inconsistent supervision can therefore propagate through the iterative learning process and negatively influence both uncertainty estimation and model convergence.
+
+For this reason, the labeling subsystem is designed with reliability and execution stability as primary objectives. Timeouts, missing-table errors, invalid joins, and other database execution failures are handled explicitly through rollback and cleanup procedures before the pipeline proceeds to the next query. Queries that execute successfully are assigned cardinalities that are normalized to remain strictly positive, since downstream MSCN training assumes positive target values during logarithmic normalization and Q-error computation. In contrast to earlier prototype versions of the system, failed queries are not assigned artificial fallback cardinalities after retries are exhausted. Instead, their cardinality field remains unset and the query is reported as a failed labeling attempt. This design choice prioritizes supervision quality over dataset completeness, reducing the risk of contaminating the training set with potentially misleading labels.
+
+The system also incorporates operational safeguards to support long-running active learning experiments. Queries are processed sequentially, previously labeled entries are skipped automatically, progress statistics are printed periodically, and failed executions may be retried up to a configurable limit before being discarded. Short waiting intervals are introduced both between retries and between consecutive queries in order to avoid excessive pressure on the database connection during large labeling batches. Successful labels are committed immediately after execution, minimizing the risk of losing progress if an interruption occurs during later stages of the labeling process.
+
+\section{Feature Extraction and Bitmap Generation}
+
+Feature extraction and bitmap construction form the interface between raw SQL workloads and the structured tensor representations required by the Multi-Set Convolutional Network (MSCN). While the underlying encoding principles follow the original MSCN design, the implementation developed in this thesis extends the classical workflow in several important ways in order to support dynamically generated workloads and iterative active learning. Traditional MSCN experiments typically assume a static offline dataset in which queries, feature encodings, and bitmap representations are precomputed once and subsequently loaded from disk during training. In contrast, the pipeline proposed in this work constructs these representations online from generated SQL queries. This distinction is important because the query pool evolves continuously throughout active learning and therefore cannot rely on a fixed preprocessed benchmark representation.
+
+The first extension introduced by the system is a generalized SQL-to-MSCN conversion layer. Instead of assuming benchmark-specific query formats, the pipeline parses raw SQL statements directly and decomposes them into the structural components required by MSCN, namely tables, joins, and predicates. During this process, aliases are resolved, operators are standardized, and join conditions are normalized into a consistent internal representation. The parser is designed to handle multiple join formulations and query-writing styles while preserving a deterministic encoding process. As a result, feature extraction becomes independent of any single benchmark or handcrafted dataset representation. This separation between SQL parsing and feature encoding improves portability across schemas and allows the same pipeline to operate on workloads generated either by large language models or by deterministic query generators.
+
+A second important extension concerns the construction of encoding vocabularies. In the original MSCN workflow, table identifiers, column representations, and join encodings are derived from fixed benchmark datasets with predefined dictionaries. In the proposed system, a predefined vocabulary is similarly required and is derived directly from the database schema at the start of the pipeline. Since all queries in the pool are generated from a fixed schema with a known set of tables, columns, operators, and join relationships, these schema elements are extracted once from the database schema and the generated query pool before any active learning rounds begin and converted into fixed one-hot structural encodings that remain consistent throughout the entire training process. Predicate values are normalized using workload-level statistics computed from this same fixed pool. Because the vocabulary is determined before labeling starts and does not change between rounds, encoding dimensions remain stable across all active learning iterations, avoiding representation mismatches between rounds.
+
+Bitmap construction similarly extends the original MSCN methodology toward a more autonomous and database-driven workflow. Rather than relying on statically prepared bitmap files, the system generates bitmaps dynamically during execution using materialized table samples obtained directly from the target database. The pipeline first detects primary keys automatically and materializes random row samples for each table participating in the workload. During feature extraction, predicates associated with a query are evaluated against these samples in order to generate binary bitmap vectors indicating which sampled tuples satisfy the corresponding conditions. If a table participates in a query without local filtering predicates, the bitmap defaults to an all-one representation, indicating that no tuple-level filtering occurs for that relation. This preserves the semantic interpretation of MSCN bitmap features while removing the dependency on benchmark-specific preprocessing pipelines
+
+Concretely, at the start of the pipeline, 1000 random primary key values are sampled from each participating table and materialized in memory. These samples remain fixed and are reused across all active learning rounds. For each query, a bitmap is generated per table by issuing a filtered query against the database in which the sampled primary keys are used as constraints and the query predicates associated with that table are appended as additional conditions. The resulting set of matching sampled tuples determines which bits in the corresponding 1000-length vector are set to one. Tables participating in a query without local predicates receive an all-one bitmap, indicating that no tuple-level filtering applies to that relation.
+
+The resulting bitmap generation process provides several practical advantages for active learning environments. Since queries are generated incrementally and labeled over multiple rounds, feature representations must be computed continuously throughout the learning process rather than prepared once in advance. Runtime bitmap generation therefore allows newly acquired queries to be encoded immediately after labeling without requiring regeneration of the entire dataset representation. This improves flexibility when working with dynamically evolving workloads and enables the active learning loop to operate end-to-end on previously unseen query distributions.
+
+The implementation also introduces several robustness mechanisms required for large-scale autonomous execution. Bitmap queries are executed under timeout control, database failures trigger rollback-safe cleanup procedures, and bitmap generation errors are isolated at the query-table level in order to prevent corruption of the remaining workload. When bitmap construction fails for a particular relation, the system assigns a zero-bitmap fallback representation so that the pipeline can continue operating without interruption. These mechanisms are primarily operational safeguards rather than modifications to the MSCN architecture itself. Nevertheless, they substantially extend the practicality of the original MSCN preprocessing workflow by enabling stable feature extraction on dynamically generated workloads and heterogeneous database schemas.
+
+From a methodological perspective, the primary contribution of this subsystem is not the introduction of a new encoding model, but the transformation of MSCN preprocessing into a fully automated and schema-independent data preparation pipeline. The resulting system preserves the representational assumptions of MSCN while extending them to settings involving online query generation, active learning, and continuously evolving workloads.
+
+\section{Multi-Set Convolutional Network}
+
+The Multi-Set Convolutional Network (MSCN), originally introduced by Kipf et al.~\cite{DBLP:conf/cidr/KipfKRLBK19}, forms the core prediction model used in this thesis. The architecture and its set-based design rationale are described in Chapter~\ref{chap:relatedwork}. This section focuses on the implementation decisions made in adapting MSCN to the proposed active learning pipeline, in particular the role of stochastic regularization through dropout, which serves a dual purpose in this system. The architecture is designed specifically for SQL cardinality estimation and exploits an important structural property of relational queries: the semantics of a query are invariant to the ordering of tables, predicates, and join conditions. This permutation-invariant representation is closely related to the Deep Sets framework proposed by Zaheer et al.~\cite{10.5555/3294996.3295098}, which formalizes neural architectures operating on unordered sets. Reordering predicates in a \texttt{WHERE} clause or changing the sequence of tables in a join expression does not alter the meaning of the query. MSCN incorporates this property directly into the network design by processing query components as unordered sets rather than sequential structures. Furthermore, this set-oriented formulation enables the model to generalize across structurally diverse queries while maintaining a compact and scalable representation suitable for uncertainty-aware learning. This permutation-invariant design also provides a suitable foundation for stochastic regularization techniques such as dropout, which are later leveraged not only to improve generalization but also to estimate predictive uncertainty within the active learning framework.
+
+Figure~\ref{fig:mscn_architecture} illustrates the overall architecture used in the implementation. Queries are represented as three separate sets corresponding to tables, predicates, and joins. Each set is processed independently through its own neural branch with shared parameters inside the branch. The outputs of these branches are pooled, concatenated, and mapped to a final normalized cardinality prediction.
+
+
+\begin{figure}[tb]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+    node distance=2cm and 3cm,
+    block/.style={draw, rectangle, rounded corners=3pt, minimum width=3cm, minimum height=1cm, align=center, font=\small},
+    arrow/.style={->, thick, >=stealth},
+]
+    % Input layer
+    \node [block, fill=blue!20] (s_in) {Table Features\\$\mathbf{S} \in \mathbb{R}^{b \times n_t \times d_s}$};
+    \node [block, fill=green!20, right=of s_in] (p_in) {Predicate Features\\$\mathbf{P} \in \mathbb{R}^{b \times n_p \times d_p}$};
+    \node [block, fill=yellow!20, right=of p_in] (j_in) {Join Features\\$\mathbf{J} \in \mathbb{R}^{b \times n_j \times d_j}$};
+
+    % MLP layers
+    \node [block, below=of s_in] (s_mlp1) {Neural Layer 1\\+ Activation + Dropout};
+    \node [block, below=of p_in] (p_mlp1) {Neural Layer 1\\+ Activation + Dropout};
+    \node [block, below=of j_in] (j_mlp1) {Neural Layer 1\\+ Activation + Dropout};
+
+    \node [block, below=1.5cm of s_mlp1] (s_mlp2) {Neural Layer 2\\+ Activation + Dropout};
+    \node [block, below=1.5cm of p_mlp1] (p_mlp2) {Neural Layer 2\\+ Activation + Dropout};
+    \node [block, below=1.5cm of j_mlp1] (j_mlp2) {Neural Layer 2\\+ Activation + Dropout};
+
+    % Pooling
+    \node [block, fill=gray!15, below=1.5cm of s_mlp2] (s_pool) {Average Pooling};
+    \node [block, fill=gray!15, below=1.5cm of p_mlp2] (p_pool) {Average Pooling};
+    \node [block, fill=gray!15, below=1.5cm of j_mlp2] (j_pool) {Average Pooling};
+
+    % Concatenation
+    \node [block, fill=red!20, below=1.5cm of p_pool] (concat) {Combine All\\$\mathbb{R}^{3h}$};
+
+    % Output
+    \node [block, below=1.5cm of concat] (out_mlp) {Output Layer + Activation + Dropout};
+    \node [block, fill=orange!20, below=1.5cm of out_mlp] (sigmoid) {Final Prediction\\$\hat{y} \in [0, 1]$};
+
+    % Arrows
+    \draw [arrow] (s_in) -- (s_mlp1);
+    \draw [arrow] (p_in) -- (p_mlp1);
+    \draw [arrow] (j_in) -- (j_mlp1);
+    \draw [arrow] (s_mlp1) -- (s_mlp2);
+    \draw [arrow] (p_mlp1) -- (p_mlp2);
+    \draw [arrow] (j_mlp1) -- (j_mlp2);
+    \draw [arrow] (s_mlp2) -- (s_pool);
+    \draw [arrow] (p_mlp2) -- (p_pool);
+    \draw [arrow] (j_mlp2) -- (j_pool);
+    \draw [arrow] (s_pool) -- (concat);
+    \draw [arrow] (p_pool) -- (concat);
+    \draw [arrow] (j_pool) -- (concat);
+    \draw [arrow] (concat) -- (out_mlp);
+    \draw [arrow] (out_mlp) -- (sigmoid);
+
+\end{tikzpicture}%
+}
+\caption{MSCN architecture. Three independent neural modules process tables, predicates, and joins. Their pooled representations are concatenated and mapped to a cardinality estimate in $[0, 1]$.}
+\label{fig:mscn_architecture}
+\end{figure}
+
+In the implementation developed for this thesis, the MSCN backbone follows the original set-based formulation but extends it with a stronger emphasis on stochastic regularization through repeated dropout operations. Dropout is not treated merely as a secondary training detail; instead, it serves two closely related purposes throughout the system. First, it improves generalization during supervised learning by reducing overfitting to narrow query patterns. Second, it provides the uncertainty estimates required by the Monte Carlo dropout acquisition strategy used during active learning.
+
+Each branch of the architecture applies two fully connected transformations with ReLU activations. After each transformation, dropout is applied before the next stage of computation. The same design pattern is repeated again in the output network after the pooled branch representations are combined. Formally, for an input feature vector $x_i$, the hidden representation is computed as
+
+\begin{equation}
+h_i^{(1)} = \text{Dropout}(\text{ReLU}(W_1 x_i + b_1), p)
+\end{equation}
+
+\begin{equation}
+h_i^{(2)} = \text{Dropout}(\text{ReLU}(W_2 h_i^{(1)} + b_2), p)
+\end{equation}
+
+where $p$ denotes the dropout probability. In the current implementation, the dropout rate is fixed at $p = 0.1$. Empirically, this value provides a stable compromise between regularization strength and optimization stability. A substantially lower value reduces the regularization effect and increases sensitivity to overfitting, particularly during later active learning rounds. Conversely, a significantly larger dropout rate introduces excessive stochasticity during the early stages of training, where the labeled dataset is still relatively small. Since active learning begins with only a limited seed set and expands incrementally over multiple rounds, maintaining this balance is important for stable convergence.
+
+After feature transformation, the representations within each branch are aggregated using masked mean pooling. Since different queries contain different numbers of tables, predicates, and joins, all inputs are padded to fixed tensor sizes during batching. The associated masks ensure that pooling operates only over valid query elements rather than over padding values. The pooled representation is therefore computed as
+
+\begin{equation}
+h_{\text{pool}} =
+\frac{\sum_{i=1}^{n} m_i \cdot h_i^{(2)}}
+{\sum_{i=1}^{n} m_i}
+\end{equation}
+
+where $m_i \in \{0,1\}$ is the binary mask indicating whether position $i$ corresponds to a real query component or to a padding entry. Masking is necessary because queries within the same batch contain different numbers of tables, predicates, and joins. All inputs are padded to fixed tensor sizes in order to enable batched computation, but padding positions carry no semantic information. Without masking, the pooling operation would average meaningful query representations together with zero-padded entries, distorting the resulting representation. The mask therefore restricts pooling to valid query elements only, ensuring that the pooled representation reflects the actual query structure independently of batch padding.
+
+The pooled table, predicate, and join representations are concatenated into a joint query representation and passed through the final prediction network:
+
+\begin{equation}
+\hat{y} =
+\sigma \Big(
+W_{\text{out}2}
+\cdot
+\text{Dropout}
+\big(
+\text{ReLU}
+(
+W_{\text{out}1}
+[
+h_{\text{table}}
+\parallel
+h_{\text{pred}}
+\parallel
+h_{\text{join}}
+]
++
+b_{\text{out}1}
+)
+\big)
++
+b_{\text{out}2}
+\Big)
+\end{equation}
+
+where $\sigma$ denotes the sigmoid activation function. The sigmoid constrains predictions to the interval $[0,1]$, corresponding to the normalized cardinality range used throughout training.
+
+An important characteristic of this implementation is that dropout remains relevant not only during training but also during active learning acquisition. Under standard inference, neural networks disable dropout in order to produce deterministic predictions. For Monte Carlo dropout acquisition, however, inference is intentionally performed with dropout layers still active. The same unlabeled query is passed through the network multiple times using different randomly sampled dropout masks. In the current pipeline, each candidate query is evaluated using 25 stochastic forward passes. 
+
+The choice of $T=25$ forward passes reflects a practical balance between uncertainty estimation quality and computational cost. A single forward pass cannot reveal prediction instability, while very small values of $T$ produce noisy and unreliable variance estimates. Conversely, substantially larger values increase acquisition cost significantly during pool scoring without providing proportional improvements in uncertainty estimation stability. A value of $T=25$ is commonly used in Monte Carlo dropout settings and provides sufficiently stable variance estimates for the workload sizes considered in this pipeline.
+
+Keeping dropout active during inference is implemented by calling \texttt{model.train()} instead of \texttt{model.eval()} before acquisition scoring. Under standard inference mode, PyTorch disables dropout layers and produces deterministic predictions. Retaining training mode causes each forward pass to sample a different dropout mask, producing slightly different predictions for the same input query. The resulting prediction variance therefore reflects the sensitivity of the model to stochastic neuron removal and serves as a proxy for representational uncertainty.
+
+The resulting prediction variance is used as an uncertainty estimate. Queries whose predictions vary strongly across dropout masks are interpreted as regions where the model has not yet learned a stable internal representation. Such queries are considered more informative for labeling because additional supervision is expected to reduce uncertainty in that region of the feature space.
+
+Unlike classification tasks, where sigmoid outputs are often interpreted as probabilities or confidence scores, the sigmoid activation in this setting serves purely as a range-bounding function that constrains predictions to the normalized cardinality interval $[0,1]$. Predictions near zero or one therefore carry no inherent meaning about model certainty. Uncertainty is instead estimated through the variance of predictions across stochastic forward passes, which reflects representational instability rather than output magnitude. Monte Carlo dropout therefore exposes forms of uncertainty that are not observable from a single deterministic prediction alone.
+
+Consequently, dropout serves a dual role within the proposed framework. During supervised learning it acts as a regularization mechanism that improves generalization and stabilizes training on incrementally expanding datasets. During active learning it becomes an uncertainty estimation mechanism that guides the selection of informative unlabeled queries. This integration of regularization and uncertainty quantification is one of the central design characteristics of the training pipeline developed in this thesis.
+
+
+\section{Normalization and Loss}
+
+True cardinalities range from one to tens of millions. Training on raw counts would be highly problematic, as a single query returning ten million rows would dominate gradient updates, preventing the model from effectively distinguishing between queries returning fifty rows and those returning five hundred. Log-scale min-max normalization compresses this range into $[0, 1]$:
+
+\begin{equation}
+y_{\text{norm}} = \frac{\log(y) - \log_{\min}}{\log_{\max} - \log_{\min}}
+\end{equation}
+
+At inference time the inverse transformation recovers the actual predicted cardinality:
+
+\begin{equation}
+\hat{y}_{\text{actual}} = \exp\left(\hat{y}_{\text{norm}} \cdot (\log_{\max} - \log_{\min}) + \log_{\min}\right)
+\end{equation}
+
+We train and evaluate with Q-error, the standard metric in cardinality estimation:
+
+\begin{equation}
+Q(p, a) = \max\left(\frac{p}{a}, \frac{a}{p}\right)
+\end{equation}
+
+A Q-error of one means a perfect estimate. A Q-error of ten means the prediction is off by a factor of ten, whether it overestimates or underestimates. This symmetry is important: a query optimizer cares about the magnitude of the error, not its direction. Q-error is also scale-invariant: being wrong by a factor of two carries the same penalty whether the true cardinality is one hundred or one million.

@@ -1,0 +1,20 @@
+queries_file: generated_queries/queries_2026-05-05_02-48-06.json
+strategies: ['random', 'mc_dropout']
+input: None
+out: None
+rounds: 5
+epochs: 10
+acquire: 200
+batch_size_train: 1024
+hid_units: 256
+num_materialized_samples: 1000
+validation_fraction: 0.1
+initial_fraction: 0.2
+seed: 42
+cuda: False
+db_host: localhost
+db_port: 5432
+db_name: imdb
+db_user: prekshashah
+db_password: admin
+db_timeout: 60000

@@ -1,0 +1,40 @@
+% !TEX root =  main.tex
+
+\chapter{Introduction}
+\label{chap:introduction}
+\pagestyle{plain}
+\setcounter{page}{1}
+
+\section{Problem Statement}
+
+Modern database systems rely heavily on cardinality estimation to optimize query execution. Accurate estimation of intermediate result sizes is essential for selecting efficient execution plans. However, traditional cardinality estimators are based on simplifying assumptions such as attribute independence and uniform data distributions, which rarely hold in real-world datasets. As a result, these estimators often produce inaccurate predictions, leading to suboptimal query plans and degraded system performance.
+
+Recent advances in learned database systems have demonstrated that machine learning models can replace traditional components and achieve significantly improved estimation accuracy. In particular, the Multi-Set Convolutional Network (MSCN) shows that deep learning models can capture complex correlations across tables, joins, and predicates~\cite{DBLP:conf/cidr/KipfKRLBK19}. Despite these improvements, learned approaches introduce a new challenge: they require large volumes of labeled training data, where each label is obtained by executing a query on a database system. This process is computationally expensive, time-consuming, and difficult to scale.
+
+At the same time, large language models (LLMs) have shown strong capabilities in generating structured data, particularly SQL queries. Frameworks such as SQLStorm demonstrate that LLMs can generate diverse and realistic SQL workloads at scale~\cite{DBLP:journals/pvldb/SchmidtLBN25}. However, existing approaches still rely on executing these queries to obtain ground truth labels, leaving the fundamental bottleneck of execution-based labeling unresolved.
+
+Therefore, a key open problem is how to generate large-scale, diverse, and labeled training data for learned database components without relying on expensive database execution.
+
+\section{Proposed Approach}
+
+In this thesis, we propose a novel perspective on the role of large language models in database systems. Instead of using LLMs during query execution, we treat them as data generators. Specifically, an LLM is used to generate synthetic SQL queries along with their corresponding labels or training signals. These query--label pairs are then used to train a supervised model that implements a database component, such as a learned cardinality estimator. The resulting supervised model is deployed at runtime, while the LLM is used only during the data generation phase.
+
+To address the challenge of data efficiency, we integrate active learning into the training process~\cite{DeepActiveLearningSurvey2024}. Instead of labeling all generated queries, the model selectively identifies the most informative queries based on uncertainty and diversity criteria, and only those selected queries are incorporated into the training dataset, significantly reducing the cost of data generation while maintaining high model performance.
+
+The proposed approach is implemented as a fully automated, schema-agnostic pipeline that integrates query generation, validation, feature extraction, active learning, and model training. The pipeline supports both LLM-based and synthetic query generation and can operate on arbitrary database schemas without manual customization. This enables scalable experimentation and efficient training of learned database components.
+
+Our approach is motivated by prior observations that workload diversity and query characteristics play a crucial role in the performance of learned models~\cite{DBLP:journals/pvldb/WangQWWZ21}. By leveraging LLMs to generate diverse workloads and combining this with active learning, we aim to improve the robustness and generalization of learned cardinality estimators while reducing reliance on execution-based labeling.
+
+\section{Contributions}
+
+The main contributions of this thesis are as follows:
+
+\begin{itemize}
+    \item We propose a novel framework that leverages large language models to generate synthetic SQL queries and their corresponding training signals, reducing dependence on manually collected query workloads.
+    
+    \item We introduce an active learning-based training strategy for learned cardinality estimation, enabling efficient selection of informative queries and significantly reducing labeling costs.
+    
+    \item We design and implement a fully automated, schema-agnostic pipeline that integrates query generation, validation, feature extraction, active learning, and model training.
+    
+    \item We demonstrate how combining LLM-based data generation with active learning improves scalability, diversity, and effectiveness of training data for learned database components.
+\end{itemize}

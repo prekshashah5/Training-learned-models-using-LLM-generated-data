@@ -1,0 +1,28 @@
+% !TEX root =  main.tex
+
+\chapter{Introduction}
+\label{chap:introduction}
+\pagestyle{plain}
+\setcounter{page}{1}
+
+\section{Problem Statement}
+
+Query optimization in relational databases depends heavily on cardinality estimation, which predicts how many rows a query will return before execution. Get the estimate right and the optimizer picks a fast and efficient execution plan. Incorrect estimates can lead to severely suboptimal execution plans and substantial performance degradation. Traditional estimators lean on assumptions like attribute independence and uniform value distributions that rarely hold in practice, and the resulting errors often compound across joins, leading to plans that are far from optimal.
+
+Over the past few years, learned cardinality estimators have shown that neural networks can do a better job. The Multi-Set Convolutional Network (MSCN) by Kipf et al.~\cite{DBLP:conf/cidr/KipfKRLBK19} demonstrated that a relatively simple deep learning model can capture cross-table correlations that rule-based estimators miss entirely. But learned models come with their own cost: they need large quantities of labeled training data, and each label requires executing a query on a live database to record its true row count. On a complex schema this execution-based labeling can take hours, making it the dominant bottleneck in any pipeline that trains learned estimators from scratch.
+
+Meanwhile, large language models have become remarkably good at generating SQL. Work like SQLStorm~\cite{DBLP:journals/pvldb/SchmidtLBN25} has shown that LLMs can produce diverse, realistic query workloads at scale when given a schema and a well-crafted prompt. But generating queries is only half the problem. Those queries still need to be executed to obtain labels, and that execution cost remains.
+
+This thesis investigates whether large language models can be used to generate diverse SQL workloads while active learning selectively identifies the most informative queries for execution-based labeling. The goal is to train accurate learned cardinality estimators while significantly reducing the cost associated with labeling large query workloads.
+
+\section{Proposed Approach}
+
+In the proposed framework, the LLM acts as a workload generator rather than a runtime query component. Given a database schema, the model produces synthetic \texttt{SELECT COUNT(*)} queries that are subsequently validated, filtered, and encoded into the representation expected by MSCN. Instead of labeling the entire workload, active learning is used to identify informative queries based on model uncertainty. Only the selected queries are executed to obtain ground-truth cardinalities, after which the estimator is retrained iteratively on the expanded labeled set.
+
+The whole process is packaged as a largely automated pipeline that is adaptable across supported relational schemas. Within the supported SQL fragment and available join metadata, the same pipeline can be applied to different database schemas without redesigning the overall workflow. A researcher provides a database schema and a small set of configuration parameters, after which the pipeline operates automatically. The pipeline generates queries, validates them through four filtering layers, labels the selected subset, trains the MSCN model, and outputs a full evaluation dashboard. The framework therefore minimizes the need for manual query engineering and supports automated workload generation, labeling, and training.
+
+The motivation draws on two bodies of prior work. Wang et al.~\cite{DBLP:journals/pvldb/WangQWWZ21} showed that the diversity and structural properties of the training workload have a profound effect on learned estimator quality, and Davitkova and Michel~\cite{DBLP:journals/corr/abs-2512-20271} demonstrated that generative AI can automate the creation of training data for database components. We build on both: using LLMs for diverse workload generation and active learning for efficient labeling.
+
+\section{Contributions}
+
+This thesis makes four primary contributions. First, it presents an LLM-based workload generation framework for learned cardinality estimation capable of producing structurally diverse SQL query workloads. Second, it integrates active learning into the labeling pipeline and evaluates uncertainty-based acquisition strategies for reducing execution-based labeling cost. Third, it introduces an automated training pipeline that supports workload generation, validation, labeling, and estimator training for relational schemas with defined join relationships while reducing the amount of manual workload engineering required during training. Fourth, it provides an experimental evaluation on the IMDB benchmark analyzing workload diversity, labeling efficiency, and estimation performance under different workload and acquisition settings.
